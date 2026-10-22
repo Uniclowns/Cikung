@@ -139,7 +139,7 @@ def build():
         inputs = [str(ROOT / "target" / target / "release/cikung") for target in TARGETS]
         run("lipo", "-create", *inputs, "-output", str(binary))
         binary.chmod(0o755)
-        run("lipo", "-verify_arch", "arm64", "x86_64", str(binary))
+        run("lipo", str(binary), "-verify_arch", "arm64", "x86_64")
         (contents / "Info.plist").write_bytes(plistlib.dumps(info()))
         shutil.copy2(ROOT / "assets/icons/Cikung.icns", resources)
         for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "Cargo.lock"):
