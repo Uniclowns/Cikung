@@ -1,0 +1,40 @@
+[package]
+name = "cikung"
+version = "0.11.1"
+edition = "2024"
+rust-version = "1.88"
+description = "An orange desktop cat that keeps you company while you listen."
+license = "MIT"
+
+[dependencies]
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "persistence", "wayland", "x11"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.11"
+raw-window-handle = "0.6"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls", "multipart"] }
+tiny_http = "0.12"
+getrandom = "0.3"
+qrcode = { version = "0.14", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+rfd = "0.15"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["ApplicationModel", "UI_Notifications_Management", "Foundation", "Foundation_Collections", "Devices_Bluetooth", "Devices_Enumeration", "Globalization", "Media", "Media_Control", "Media_Playback", "Media_Core", "Media_SpeechRecognition", "Storage", "Storage_Streams", "Win32_System_WinRT", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_Power", "Win32_Media_Audio", "Win32_System_Com", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
+keyring = { version = "3", features = ["windows-native"] }
+wasapi = "0.22"
+hound = "3.5"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mpris = "2.0"
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = true
+

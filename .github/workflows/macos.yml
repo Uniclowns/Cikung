@@ -1,0 +1,28 @@
+name: Mac app package
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  universal:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: python3 scripts/build-macos.py --check
+      - run: python3 scripts/build-macos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cikung-macOS-universal
+          path: |
+            dist/Cikung-macOS-universal.zip
+            dist/Cikung-macOS-universal.zip.sha256
+          if-no-files-found: error

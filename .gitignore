@@ -1,0 +1,25 @@
+/target/
+/.tools/
+/reference/
+/dist/
+/.gstack/
+/.claude-flow/
+/.swarm/
+*.log
+
+.gstack/
+
+# Local QA captures and machine-specific probe evidence
+/docs/*.png
+/docs/*.json
+!/docs/nusa-rea-summary.json
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+.DS_Store
+__pycache__/

@@ -1,0 +1,21 @@
+name: Rust checks
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libssl-dev pkg-config libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo build --release --locked
