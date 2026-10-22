@@ -588,7 +588,22 @@ mod tests {
         assert!(text.contains("PermissionRequest"));
         assert!(!text.contains("CIKUNG_TOKEN"));
         assert!(!text.contains("bypass"));
-        assert!(text.contains("Node''s"));
+        let hook = &value["hooks"]["PermissionRequest"][0]["hooks"][0];
+        let command = hook["command"].as_str().unwrap();
+        let escaped = if cfg!(windows) {
+            "Node''s"
+        } else {
+            "Node'\\''s"
+        };
+        assert!(command.contains(escaped));
+        assert_eq!(
+            hook.get("shell").and_then(|s| s.as_str()),
+            if cfg!(windows) {
+                Some("powershell")
+            } else {
+                None
+            }
+        );
         assert_eq!(
             value["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"],
             115

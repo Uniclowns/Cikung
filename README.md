@@ -38,6 +38,10 @@ Run `dist/Cikung/Cikung.exe`, or extract `dist/Cikung-Windows-x64.zip` and open 
 - Right-click the cat for its wardrobe or quit. The tray also has Settings and Quit.
 - Settings opens a separate window with grouped FLOW / NOTCH navigation. General selects the display and optional startup; Music & lyrics controls automatic Music on hover and lyrics; Shortcuts changes the global shortcut. Done or the window close button saves changes and leaves Cikung running.
 
+## Download
+
+Get the Windows x64 portable ZIP or the experimental Mac universal app (Apple Silicon + Intel) from [GitHub Releases](https://github.com/Uniclowns/Cikung/releases). Extract the Windows ZIP and run Cikung.exe; on Mac, extract the ZIP and move Cikung.app to Applications. The Mac build is ad-hoc signed and not notarized; its feature limits are listed in the [Mac guide](docs/macos.md).
+
 ## Features
 
 | Panel | Working functionality |

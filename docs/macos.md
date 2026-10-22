@@ -1,6 +1,12 @@
-# Cikung for Mac — build preparation
+# Cikung for Mac
 
 Cikung uses the same original orange cat head for its Windows executable, app windows/tray and Mac Finder/Dock icon. Windows ICO contains16,24,32,48,64,128 and256px images. Mac ICNS includes a1024px representation. These are conversions of the existing `assets/cikung-face.png`; no new art or third-party app assets were copied.
+
+## Install a release
+
+Download `Cikung-macOS-universal.zip` from the [GitHub Releases page](https://github.com/Uniclowns/Cikung/releases). Extract the ZIP and move `Cikung.app` to Applications. The universal app contains both Apple Silicon and Intel executables. You do not need the source build kit to use this package.
+
+This is an early Mac build. The signature is ad-hoc, not Developer ID/notarized, so Gatekeeper may block a downloaded copy. No macOS security setting is changed by Cikung or its installer. Feature limits below still apply.
 
 ## Build on a Mac
 
@@ -13,7 +19,7 @@ The Mac package is an early platform build, not verified feature parity with Win
 
 The build checks both architectures, verifies an ad-hoc code signature, and runs `--help` without opening the GUI. It packages dependency/font notices, bundle metadata and the Automation usage description for supported media apps. No Apple account or signing key is requested. Ad-hoc signing does not provide Developer ID trust or notarization: a downloaded distributed app can still be blocked by Gatekeeper. A public signed release requires the developer's Apple signing/notarization process; this preparation does not change macOS security settings.
 
-The `Mac app package` GitHub Actions workflow performs source tests and produces the universal ZIP as an artifact when this repository is hosted on GitHub. Run it from the repository’s Actions tab using Run workflow. Native Mac packaging remains unverified until that job succeeds. The existing cross-platform checks remain in place.
+The `Mac app package` GitHub Actions workflow performs source tests and produces the universal ZIP as an artifact when this repository is hosted on GitHub. Run it from the repository’s Actions tab using Run workflow. A successful job verifies native compilation, both executable architectures, bundle signing integrity and the CLI smoke check; interactive GUI/media checks remain separate. The existing cross-platform checks remain in place.
 
 ## Available source paths and practical limits
 
