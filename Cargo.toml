@@ -35,7 +35,7 @@ keyring = { version = "3", features = ["apple-native"] }
 # Same versions winit already uses: pocket Finder icons and drag-out, no new crates.
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = ["NSArray", "NSData", "NSDictionary", "NSGeometry", "NSObject", "NSString", "NSThread", "NSURL"] }
-objc2-app-kit = { version = "0.2", features = ["NSApplication", "NSBitmapImageRep", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSEvent", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSResponder", "NSView", "NSWindow", "NSWorkspace"] }
+objc2-app-kit = { version = "0.2", features = ["NSApplication", "NSBitmapImageRep", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSEvent", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSResponder", "NSScreen", "NSView", "NSWindow", "NSWorkspace"] }
 
 [profile.release]
 opt-level = "s"

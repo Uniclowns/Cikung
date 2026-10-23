@@ -76,9 +76,9 @@ impl Motion {
         self.sample(now) != self.target || self.state(now).1 != Vec2::ZERO
     }
     pub fn openness(&self, now: f64) -> f32 {
-        // Measured from the widest collapsed pill so the lyric width never reveals content.
-        ((self.sample(now).x - COLLAPSED_LYRIC.x) / (OPEN_WIDTH - COLLAPSED_LYRIC.x))
-            .clamp(0.0, 1.0)
+        // Measured by height: wider collapsed shapes (lyric pill, Mac camera-notch wings)
+        // never look half open. 240 pt is the shortest open page (Music).
+        ((self.sample(now).y - COLLAPSED.y) / (240.0 - COLLAPSED.y)).clamp(0.0, 1.0)
     }
 }
 
