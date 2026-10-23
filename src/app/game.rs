@@ -103,13 +103,13 @@ impl Cikung {
                 self.prefs.chat.model
             ))
             .size(10.0)
-            .color(GRAY),
+            .color(muted()),
         );
         ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new("Or prepare the question in:")
                     .size(11.0)
-                    .color(GRAY),
+                    .color(muted()),
             );
             for (target, label) in [
                 (crate::desktop_apps::Target::Claude, "Claude App"),
@@ -129,7 +129,7 @@ impl Cikung {
                 }
             }
         });
-        ui.label(RichText::new("Desktop buttons prepare a draft in Agents; review it and press Send there. Existing drafts are kept.").size(10.0).color(GRAY));
+        ui.label(RichText::new("Desktop buttons prepare a draft in Agents; review it and press Send there. Existing drafts are kept.").size(10.0).color(muted()));
         if busy {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -143,7 +143,7 @@ impl Cikung {
                     ui.add(egui::Label::new(text).wrap().selectable(true));
                 }
                 Err(error) => {
-                    ui.label(RichText::new(error).color(ORANGE));
+                    ui.label(RichText::new(error).color(accent()));
                 }
             }
         }

@@ -88,7 +88,7 @@ impl Cikung {
                         Color32::from_rgb(235, 125, 160),
                     );
                 }
-                ui.painter().circle_filled(c, 3.0, WHITE);
+                ui.painter().circle_filled(c, 3.0, ink());
             }
             Outfit::Wizard => {
                 let c = cat_rect.center_top();
@@ -173,7 +173,7 @@ impl Cikung {
                     ui.painter().rect_filled(
                         rect,
                         10,
-                        Color32::from_gray(if response.hovered() { 29 } else { 17 }),
+                        veil(if response.hovered() { 29 } else { 17 }),
                     );
                     let image =
                         Rect::from_min_size(rect.min + Vec2::new(10.0, 8.0), Vec2::splat(40.0));
@@ -199,7 +199,7 @@ impl Cikung {
                         egui::Label::new(
                             RichText::new(self.feature_status(*page))
                                 .size(10.0)
-                                .color(GRAY),
+                                .color(muted()),
                         )
                         .truncate(),
                     );
@@ -236,7 +236,7 @@ impl Cikung {
                         if selected {
                             Color32::from_rgb(61, 39, 22)
                         } else {
-                            Color32::from_gray(if response.hovered() { 29 } else { 17 })
+                            veil(if response.hovered() { 29 } else { 17 })
                         },
                     );
                     let image = Rect::from_center_size(
@@ -254,7 +254,7 @@ impl Cikung {
                         egui::Align2::CENTER_CENTER,
                         breed.label(),
                         egui::FontId::proportional(11.0),
-                        if selected { ORANGE } else { WHITE },
+                        if selected { accent() } else { ink() },
                     );
                     if response
                         .on_hover_text("Use this cat throughout Cikung")
@@ -281,7 +281,7 @@ impl Cikung {
             ui.label(
                 RichText::new("These choices apply while feature cats are enabled.")
                     .size(10.0)
-                    .color(GRAY),
+                    .color(muted()),
             );
             for page in FEATURES {
                 if page == Page::Agents {

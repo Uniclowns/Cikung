@@ -115,6 +115,18 @@ impl Cikung {
         card(ui, |ui| {
             heading(
                 ui,
+                "Appearance",
+                "The notch's colour. Album colour follows the playing song's cover.",
+            );
+            ui.horizontal_wrapped(|ui| {
+                for theme in Theme::ALL {
+                    ui.radio_value(&mut self.prefs.theme, theme, theme.label());
+                }
+            });
+        });
+        card(ui, |ui| {
+            heading(
+                ui,
                 "At home in your notch",
                 "A small companion at the top of your screen.",
             );
@@ -182,18 +194,20 @@ impl Cikung {
             });
             if let Some(monitor) = &self.bluetooth {
                 if let Some(error) = &monitor.error {
-                    ui.label(RichText::new(error).color(ORANGE));
+                    ui.label(RichText::new(error).color(accent()));
                 } else if !monitor.ready() {
-                    ui.label(RichText::new("Checking connected devices…").color(GRAY));
+                    ui.label(RichText::new("Checking connected devices…").color(muted()));
                 } else if monitor.devices().next().is_none() {
-                    ui.label(RichText::new("No connected Bluetooth devices detected.").color(GRAY));
+                    ui.label(
+                        RichText::new("No connected Bluetooth devices detected.").color(muted()),
+                    );
                 } else {
                     for device in monitor.devices() {
                         ui.label(format!("● {}", device.name));
                     }
                 }
             }
-            ui.label(RichText::new("Windows Bluetooth and Bluetooth LE · checks every 3 seconds. Existing connections are quiet at startup.").size(11.0).color(GRAY));
+            ui.label(RichText::new("Windows Bluetooth and Bluetooth LE · checks every 3 seconds. Existing connections are quiet at startup.").size(11.0).color(muted()));
         });
         card(ui, |ui| {
             heading(
@@ -201,7 +215,7 @@ impl Cikung {
                 "Your data & connections",
                 "You choose when to record, connect, or send a message.",
             );
-            ui.label(RichText::new("Recording and dictation start from their buttons. Keys are kept in your operating system credential store. Phone access starts off; coding hooks are opt-in.").color(GRAY));
+            ui.label(RichText::new("Recording and dictation start from their buttons. Keys are kept in your operating system credential store. Phone access starts off; coding hooks are opt-in.").color(muted()));
             ui.add_space(12.0);
             if ui.button("Quit Cikung").clicked() {
                 ui.ctx()
@@ -265,7 +279,9 @@ impl Cikung {
                 child.add_space(7.0);
                 child.add(egui::Label::new(RichText::new(title).size(26.0).strong()).wrap());
                 child.add_space(5.0);
-                child.add(egui::Label::new(RichText::new(subtitle).size(12.0).color(GRAY)).wrap());
+                child.add(
+                    egui::Label::new(RichText::new(subtitle).size(12.0).color(muted())).wrap(),
+                );
                 let image = Rect::from_center_size(
                     rect.right_bottom() - Vec2::new(35.0, 35.0),
                     Vec2::splat(64.0),
@@ -281,7 +297,7 @@ impl Cikung {
                     self.cat_textures[self.breed_for(feature).index()].id(),
                     image,
                     Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                    WHITE,
+                    ink(),
                 );
             });
         ui.add_space(22.0);
@@ -327,7 +343,7 @@ impl Cikung {
             }
             Agents => {
                 card(ui, |ui| self.agents(ui));
-                ui.label(RichText::new("Desktop connections use the active app window. Oh My Pi uses a connected coding session.").size(11.0).color(GRAY));
+                ui.label(RichText::new("Desktop connections use the active app window. Oh My Pi uses a connected coding session.").size(11.0).color(muted()));
             }
             Chat => {
                 card(ui, |ui| {
@@ -362,7 +378,7 @@ impl Cikung {
                             egui::Button::new(
                                 RichText::new("Start dictation").color(Color32::BLACK),
                             )
-                            .fill(ORANGE),
+                            .fill(accent()),
                         )
                         .clicked()
                     {
@@ -390,7 +406,7 @@ impl Cikung {
                         "Keep audio on your computer",
                         "Offline file transcription is available with your own whisper.cpp engine and model.",
                     );
-                    ui.label(RichText::new("Open Notes & recording → Audio files and transcription to choose the local engine, model and audio file. Cloud transcription is available separately with a saved provider key.").color(GRAY));
+                    ui.label(RichText::new("Open Notes & recording → Audio files and transcription to choose the local engine, model and audio file. Cloud transcription is available separately with a saved provider key.").color(muted()));
                 });
             }
         }
@@ -408,7 +424,7 @@ impl Cikung {
             "For VLC versions that do not expose a system media session.",
         );
         {
-            ui.label(RichText::new("If VLC does not expose a system media session, enable its Web interface on local port 8080 and enter that interface password here. Setup: docs/vlc.md.").size(11.0).color(GRAY));
+            ui.label(RichText::new("If VLC does not expose a system media session, enable its Web interface on local port 8080 and enter that interface password here. Setup: docs/vlc.md.").size(11.0).color(muted()));
             ui.add(
                 egui::TextEdit::singleline(&mut self.vlc_password)
                     .password(true)
@@ -521,7 +537,7 @@ impl Cikung {
                 self.report(result, "Saved key removed.");
             }
         });
-        ui.label(RichText::new("Ollama and LM Studio can run entirely on this PC. Cloud messages and summaries go only to the provider you select.").size(11.0).color(GRAY));
+        ui.label(RichText::new("Ollama and LM Studio can run entirely on this PC. Cloud messages and summaries go only to the provider you select.").size(11.0).color(muted()));
     }
 }
 
@@ -546,7 +562,7 @@ impl Cikung {
                 ui.label(
                     RichText::new("Only Cikung's AI chime. 0% is silent.")
                         .size(11.0)
-                        .color(GRAY),
+                        .color(muted()),
                 );
                 if ui.button("Test completion sound").clicked() {
                     let result = self
@@ -565,10 +581,10 @@ impl Cikung {
                     RichText::new(
                         "Completion sounds are currently available on Windows and macOS.",
                     )
-                    .color(GRAY),
+                    .color(muted()),
                 );
             }
-            ui.label(RichText::new("Link desktop apps in Agents. Claude Code needs its Cikung hook connection. The sound plays once when a turn finishes; starting Cikung or opening an idle app stays quiet.").size(11.0).color(GRAY));
+            ui.label(RichText::new("Link desktop apps in Agents. Claude Code needs its Cikung hook connection. The sound plays once when a turn finishes; starting Cikung or opening an idle app stays quiet.").size(11.0).color(muted()));
         });
         card(ui, |ui| {
             heading(
@@ -602,9 +618,9 @@ impl Cikung {
             } else {
                 access.label()
             };
-            ui.label(RichText::new(status).color(GRAY));
+            ui.label(RichText::new(status).color(muted()));
             if let Some(error) = self.whatsapp.as_ref().and_then(|m| m.error.as_ref()) {
-                ui.label(RichText::new(error).color(ORANGE));
+                ui.label(RichText::new(error).color(accent()));
             }
             ui.add_enabled_ui(
                 cfg!(windows) && !self.demo && self.capture.is_none() && self.audit.is_none(),
@@ -634,11 +650,11 @@ impl Cikung {
                 },
             );
             ui.add_space(10.0);
-            ui.label(RichText::new("Enable Windows notifications in WhatsApp / WhatsApp Desk. Cikung follows new Windows alerts, including those sent to Notification Center while Do not disturb is on. Old notifications stay quiet at startup.").size(11.0).color(GRAY));
+            ui.label(RichText::new("Enable Windows notifications in WhatsApp / WhatsApp Desk. Cikung follows new Windows alerts, including those sent to Notification Center while Do not disturb is on. Old notifications stay quiet at startup.").size(11.0).color(muted()));
         });
         card(ui, |ui| {
             heading(ui, "Only on your screen", "Message previews start hidden.");
-            ui.label(RichText::new("WhatsApp alerts are held briefly in memory, never saved to Cikung history or sent to AI, cloud services or your phone. Cikung does not reply, dismiss, or mark messages as read.").color(GRAY));
+            ui.label(RichText::new("WhatsApp alerts are held briefly in memory, never saved to Cikung history or sent to AI, cloud services or your phone. Cikung does not reply, dismiss, or mark messages as read.").color(muted()));
             if ui.button("Test notch notification").clicked() {
                 self.toast("WhatsApp test", "Test notification from Cikung");
             }
