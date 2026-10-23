@@ -315,6 +315,14 @@ impl Cikung {
                         self.expanded = true;
                     }
                 });
+                card(ui, |ui| {
+                    heading(
+                        ui,
+                        "Playback options",
+                        "Choose the player and its shuffle, repeat and volume.",
+                    );
+                    self.playback_options(ui);
+                });
                 card(ui, |ui| self.vlc_settings(ui));
             }
             Agents => {
@@ -525,7 +533,7 @@ impl Cikung {
                 "A little sound when AI finishes",
                 "Claude App · Claude Code · Codex / ChatGPT App",
             );
-            ui.add_enabled_ui(cfg!(windows), |ui| {
+            ui.add_enabled_ui(cfg!(any(windows, target_os = "macos")), |ui| {
                 ui.checkbox(
                     &mut self.prefs.agent_completion_sound,
                     "Play a sound when AI finishes",
@@ -552,10 +560,12 @@ impl Cikung {
                     self.report(result, message);
                 }
             });
-            if !cfg!(windows) {
+            if !cfg!(any(windows, target_os = "macos")) {
                 ui.label(
-                    RichText::new("Completion sounds are currently available on Windows.")
-                        .color(GRAY),
+                    RichText::new(
+                        "Completion sounds are currently available on Windows and macOS.",
+                    )
+                    .color(GRAY),
                 );
             }
             ui.label(RichText::new("Link desktop apps in Agents. Claude Code needs its Cikung hook connection. The sound plays once when a turn finishes; starting Cikung or opening an idle app stays quiet.").size(11.0).color(GRAY));

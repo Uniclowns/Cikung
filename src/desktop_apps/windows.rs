@@ -296,15 +296,21 @@ fn capture_window(
             submit_enabled,
         )
     });
-    let editable = composer
-        .as_ref()
-        .and_then(|e| value(e).ok())
-        .is_some_and(|v| unsafe { v.CurrentIsReadOnly().is_ok_and(|v| !v.as_bool()) });
+    let writable = |e: &IUIAutomationElement| {
+        value(e)
+            .ok()
+            .is_some_and(|v| unsafe { v.CurrentIsReadOnly().is_ok_and(|v| !v.as_bool()) })
+    };
+    let editable = composer.as_ref().is_some_and(writable);
+    // Claude's Code tab and split views expose several prompts. Any writable one
+    // means the app is idle, so finished turns still notify; Send keeps needing
+    // exactly one composer (`can_send`) so it can never type into the wrong chat.
+    let idle = composers.iter().any(writable);
     let state = if busy {
         State::Working
     } else if attention {
         State::Attention
-    } else if editable {
+    } else if idle {
         State::Ready
     } else {
         State::Loading
@@ -312,6 +318,7 @@ fn capture_window(
     let detail=match state {
         State::Working=>"The app is working. Its visible conversation updates here.",
         State::Attention=>"Continue or sign in inside the app.",
+        State::Ready if !editable=>"Several chats are open. Finished replies still notify; Send needs one visible chat.",
         State::Ready if draft_present=>"The app has an existing draft. It will be preserved.",
         State::Ready=>"Linked to the active app conversation.",
         _=>"The app is loading or has not exposed its chat yet. Open it and finish loading/sign-in.",
@@ -478,12 +485,16 @@ pub(super) fn run(
         }
     }
     let mut last = Instant::now() - Duration::from_secs(10);
+    let mut interval = Duration::from_secs(2);
     loop {
         match commands.recv_timeout(Duration::from_millis(250)) {
             Ok(Command::Quit) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Ok(Command::Configure(value)) => {
                 enabled = value;
                 last = Instant::now() - Duration::from_secs(10);
+            }
+            Ok(Command::Pace(resting)) => {
+                interval = Duration::from_secs(if resting { 5 } else { 2 });
             }
             Ok(Command::Open(target)) => {
                 let _ = events.send(Event::Action(false, open(target)));
@@ -502,7 +513,7 @@ pub(super) fn run(
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
-        if last.elapsed() >= Duration::from_secs(2) {
+        if last.elapsed() >= interval {
             let apps = Target::ALL.map(|target| {
                 if enabled[target.index()] {
                     capture(target, &automation)

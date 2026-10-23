@@ -8,6 +8,6 @@ CouCou by Louis-CFM was used as a source reference only. Its MIT source license 
 
 The supplied orange-cat illustration was processed using the built-in image generation tool to prepare a transparent sprite and the head-only rendition used in 0.2. No ownership of the original artwork is asserted by this project. The project's MIT license covers original code, not supplied artwork. Prompts and provenance are recorded in `docs/asset-provenance.md`.
 
-## Plus Jakarta Sans
+## Figtree
 
-Plus Jakarta Sans is embedded from the official Google Fonts distribution, under the SIL Open Font License 1.1. Copyright and complete license: `assets/fonts/OFL-PlusJakartaSans.txt` (packaged as `licenses/OFL-PlusJakartaSans.txt`). Source: https://github.com/google/fonts/tree/main/ofl/plusjakartasans
+Figtree Bold is embedded from the upstream Figtree project under the SIL Open Font License 1.1. Copyright and complete license: `assets/fonts/OFL-Figtree.txt` (packaged as `licenses/OFL-Figtree.txt`). Source: https://github.com/erikdkennedy/figtree. Figtree was chosen as a free lookalike of Spotify's interface font. Spotify Mix and Circular are proprietary, and no Spotify font files are included.

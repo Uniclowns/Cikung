@@ -319,7 +319,7 @@ mod platform {
     }
 
     fn icon() -> Result<Icon, String> {
-        let image = image::load_from_memory(include_bytes!("../assets/cikung-face.png"))
+        let image = image::load_from_memory(include_bytes!("../assets/embed/cikung-face.png"))
             .map_err(|e| format!("Could not load the tray cat: {e}"))?
             .resize_exact(32, 32, image::imageops::FilterType::Lanczos3)
             .to_rgba8();

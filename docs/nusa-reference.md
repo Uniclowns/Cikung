@@ -36,3 +36,28 @@ Remaining preview gaps: external file drag-out, brightness/volume/key/language o
 - Current Cikung differences: answered by focused source review and implementation above.
 - New behavior: unit/layout checks plus native window fixture verification.
 - Native Nusa internals/performance: unresolved because no released artifact was provided; not required for these independent Cikung implementations.
+
+## Nusa 1.0.0 native build → music motion and look (2026-10-22)
+
+Target: the installed `C:\Users\pet\AppData\Local\Programs\Nusa\nusa.exe` (Nusa 1.0.0, PE32+, 909 KB, dated 2026-10-17). Static strings show a single-file Rust app (`src\main.rs`) drawing with Direct2D, D3D11, DirectComposition and DirectWrite, media through `GlobalSystemMediaTransportControlsSessionManager` and lyrics from LRCLIB. No code was decompiled or copied.
+
+Runtime evidence came from screen frames of the already-running Nusa while Spotify played (about 89 fps, cursor moved to the notch and back, then restored). The notch width was measured per frame:
+
+| Observation | Measured |
+| --- | --- |
+| Open | 386 → peak 700 → settles 680 px. Peak after ~250 ms, settled by ~480 ms. Overshoot ≈ 7%, so ζ ≈ 0.65, ωₙ ≈ 17.5 rad/s. |
+| Close | 680 → low 362 → settles 386 px. The undershoot is similar. |
+| Surface | Black for the top ~15% of the height, then roughly t^1.5 toward a dark cover colour (peak channel ≈ 115). This applies to both the collapsed pill and the open panel. The tint changes with the song. |
+| Collapsed while music plays | ~384 px pill showing the current synced lyric. On a line change, the old line rises and fades while the new one rises in (~250 ms). |
+| Open lyrics | Lines are the same size. The current line is white and its neighbours are dim. The list eases upward over ~250–450 ms on each line change. |
+| Transport | Flat white icons with no discs, a lyrics button, and elapsed · bar · remaining on one row. Progress updates once per second. |
+
+Applied to Cikung, with its own cats, font and layout:
+
+- An underdamped analytic spring (`notch.rs`) keeps velocity when interrupted. The host is 604 px wide while the panel opens at 580 px, which leaves room to overshoot. The collapse squash is bounded.
+- `paint_surface` fades the black surface into a tint taken from the current cover (`album_tint`). The tint eases over 600 ms. Non-music pages stay black.
+- When a synced lyric is live, the collapsed notch widens to 360 px and shows it with a rising crossfade.
+- The Music page has a Nusa-style lyric flow (click-to-seek kept), flat transport icons with a Lyrics button, a 64 px cover and an inline progress row.
+- Reduced motion snaps the spring, tint, ticker and lyric flow.
+
+Not reproduced: Nusa's outer drop shadow, because Cikung's window region clips everything outside the surface. Bold lyric weight is also missing, because only the variable font's default instance is loaded. Validation: 129 Rust tests (spring overshoot/squash, cover tint), warnings-denied Clippy, rustfmt, and `--screenshot` renders of the Music page and the collapsed ticker using temporary sample cover/lyrics that were then removed. The live hover animation was not frame-captured, because Nusa occupies the same top-centre spot.

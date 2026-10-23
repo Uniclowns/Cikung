@@ -794,8 +794,9 @@ fn run_server(
                 continue;
             }
             if phone && path == "/cat.png" && r.method() == &Method::Get {
-                let mut response =
-                    Response::from_data(include_bytes!("../assets/cikung-face.png").as_slice());
+                let mut response = Response::from_data(
+                    include_bytes!("../assets/embed/cikung-face.png").as_slice(),
+                );
                 for (key, value) in [
                     ("Content-Type", "image/png"),
                     ("Cache-Control", "no-store"),

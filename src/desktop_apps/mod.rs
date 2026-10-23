@@ -138,6 +138,8 @@ pub enum Event {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum Command {
     Configure([bool; 2]),
+    /// The notch is resting: poll every 5 s instead of every 2 s.
+    Pace(bool),
     Open(Target),
     Send(Target, Binding, String),
     Quit,
@@ -148,6 +150,7 @@ pub struct Manager {
     pub apps: [AppSnapshot; 2],
     pub pending: bool,
     enabled: [bool; 2],
+    resting: bool,
     completion: [Completion; 2],
     completed: Vec<Target>,
 }
@@ -196,6 +199,7 @@ impl Manager {
             apps,
             pending: false,
             enabled,
+            resting: false,
             completion: Default::default(),
             completed: vec![],
         }
@@ -211,6 +215,15 @@ impl Manager {
             }
             if let Some(tx) = &self.tx {
                 let _ = tx.send(Command::Configure(enabled));
+            }
+        }
+    }
+    /// Slower polling while the notch rests keeps memory low; finished replies still notify.
+    pub fn set_resting(&mut self, resting: bool) {
+        if resting != self.resting {
+            self.resting = resting;
+            if let Some(tx) = &self.tx {
+                let _ = tx.send(Command::Pace(resting));
             }
         }
     }

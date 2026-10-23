@@ -1,8 +1,9 @@
 //! macOS has no supported system-wide now-playing reader for third-party apps.
 //! Use the public scripting dictionaries of running Spotify, Music, and VLC.
 //! Browser/YouTube discovery is deliberately unsupported on this backend.
+//! Covers come from Spotify's artwork URL and Music's raw artwork data.
 
-use std::process::Command;
+use std::{collections::HashMap, process::Command, sync::Arc, time::Duration};
 
 use super::{MediaBackend, MediaCommand, MediaSession, PlaybackState};
 
@@ -29,10 +30,90 @@ const PLAYERS: [Player; 3] = [
     },
 ];
 
-struct MacBackend;
+/// Track key and its cover (or the remembered absence of one).
+type CachedCover = (String, Option<Arc<Vec<u8>>>);
+
+#[derive(Default)]
+struct MacBackend {
+    /// Last cover per player, keyed by track, so each song is looked up once.
+    artwork: HashMap<&'static str, CachedCover>,
+}
 
 pub fn create() -> Result<Box<dyn MediaBackend>, String> {
-    Ok(Box::new(MacBackend))
+    Ok(Box::new(MacBackend::default()))
+}
+
+impl MacBackend {
+    fn artwork_for(&mut self, player: Player, session: &MediaSession) -> Option<Arc<Vec<u8>>> {
+        let key = format!("{}\n{}\n{}", session.title, session.artist, session.album);
+        if let Some((cached, art)) = self.artwork.get(player.bundle)
+            && *cached == key
+        {
+            return art.clone();
+        }
+        // A missing cover is remembered for this track, not retried every poll.
+        let art = read_artwork(player).map(Arc::new);
+        self.artwork.insert(player.bundle, (key, art.clone()));
+        art
+    }
+}
+
+/// Cover bytes for the tinted notch: Spotify's artwork URL, or Music's raw artwork data.
+fn read_artwork(player: Player) -> Option<Vec<u8>> {
+    match player.name {
+        "Spotify" => {
+            let url = run_script(
+                "with timeout of 2 seconds\ntell application id \"com.spotify.client\" to return artwork url of current track\nend timeout",
+            )
+            .ok()?;
+            let url = url.trim();
+            // Only Spotify's own image CDN, never an arbitrary address from script output.
+            if !url.starts_with("https://i.scdn.co/") {
+                return None;
+            }
+            let bytes = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .ok()?
+                .get(url)
+                .send()
+                .ok()?
+                .error_for_status()
+                .ok()?
+                .bytes()
+                .ok()?;
+            (bytes.len() <= 8 * 1024 * 1024).then(|| bytes.to_vec())
+        }
+        "Music" => {
+            let path = std::env::temp_dir().join(format!("cikung-cover-{}", std::process::id()));
+            let text = path.to_str()?;
+            if text.contains(['"', '\\']) {
+                return None;
+            }
+            let script = format!(
+                r#"with timeout of 3 seconds
+tell application id "com.apple.Music"
+if (count of artworks of current track) is 0 then return "none"
+set coverData to raw data of artwork 1 of current track
+end tell
+end timeout
+set coverFile to open for access (POSIX file "{text}") with write permission
+try
+set eof coverFile to 0
+write coverData to coverFile
+end try
+close access coverFile
+return "ok""#
+            );
+            if run_script(&script).ok()?.trim() != "ok" {
+                return None;
+            }
+            let bytes = std::fs::read(&path).ok();
+            let _ = std::fs::remove_file(&path);
+            bytes.filter(|bytes| !bytes.is_empty())
+        }
+        _ => None,
+    }
 }
 
 impl MediaBackend for MacBackend {
@@ -45,7 +126,10 @@ impl MediaBackend for MacBackend {
             }
             let script = metadata_script(player);
             match run_script(&script).and_then(|output| parse_session(player, &output)) {
-                Ok(Some(session)) => sessions.push(session),
+                Ok(Some(mut session)) => {
+                    session.artwork = self.artwork_for(player, &session);
+                    sessions.push(session);
+                }
                 Ok(None) => (),
                 Err(error) => failures.push(format!("{}: {error}", player.name)),
             }

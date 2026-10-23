@@ -1,4 +1,5 @@
 //! Original, embedded chime; no external player or audio file is required on Windows.
+//! macOS plays the same chime through the built-in `afplay`.
 use std::time::{Duration, Instant};
 
 const CHIME: &[u8] = include_bytes!("../assets/agent-complete.wav");
@@ -68,10 +69,26 @@ fn play(volume: u8) -> Result<(), String> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn play(volume: u8) -> Result<(), String> {
+    // afplay ships with macOS, so the embedded chime still needs no extra player.
+    let path = std::env::temp_dir().join(format!("cikung-chime-{}.wav", std::process::id()));
+    std::fs::write(&path, scaled_chime(volume))
+        .map_err(|e| format!("Could not prepare the completion sound: {e}"))?;
+    let mut child = std::process::Command::new("/usr/bin/afplay")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("macOS could not play the completion sound: {e}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn play(volume: u8) -> Result<(), String> {
     let _ = scaled_chime(volume);
-    Err("Completion sounds currently require Windows.".into())
+    Err("Completion sounds currently require Windows or macOS.".into())
 }
 
 #[cfg(test)]

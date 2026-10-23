@@ -15,6 +15,10 @@ pub fn window_handle(cc: &eframe::CreationContext<'_>) -> Option<usize> {
     use raw_window_handle::HasWindowHandle;
     match cc.window_handle().ok()?.as_raw() {
         raw_window_handle::RawWindowHandle::Win32(handle) => Some(handle.hwnd.get() as usize),
+        // The NSView, used only by the macOS pocket drag-out.
+        raw_window_handle::RawWindowHandle::AppKit(handle) => {
+            Some(handle.ns_view.as_ptr() as usize)
+        }
         _ => None,
     }
 }
@@ -356,7 +360,37 @@ pub fn volume(command: i32) {
         }
     }
 }
+/// Like Nusa: hand idle pages back to Windows while the notch rests. Task Manager's
+/// memory drops; pages fault back in only when touched again.
+#[cfg(target_os = "windows")]
+pub fn trim_memory() {
+    use windows::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
+    unsafe {
+        let _ = SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+    }
+}
 #[cfg(not(target_os = "windows"))]
+pub fn trim_memory() {}
+
+/// Same 8/9/10 = mute/down/up codes as Windows, through AppleScript's `set volume`.
+#[cfg(target_os = "macos")]
+pub fn volume(command: i32) {
+    let script = match command {
+        8 => "set volume output muted not (output muted of (get volume settings))",
+        9 => "set volume output volume ((output volume of (get volume settings)) - 6)",
+        10 => "set volume output volume ((output volume of (get volume settings)) + 6)",
+        _ => return,
+    };
+    if let Ok(mut child) = std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", script])
+        .spawn()
+    {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn volume(_command: i32) {}
 
 #[cfg(target_os = "windows")]
@@ -626,6 +660,338 @@ pub fn capture_own_window(title: &str, path: &str) -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 pub fn capture_own_window(_title: &str, _path: &str) -> Result<(), String> {
     Err("Native popup capture is supported on Windows only.".into())
+}
+
+/// File Explorer's own icon, or thumbnail for images and videos, as unmultiplied RGBA.
+#[cfg(target_os = "windows")]
+pub fn shell_icon(path: &str, size: i32) -> Option<([usize; 2], Vec<u8>)> {
+    use windows::{
+        Win32::{
+            Foundation::SIZE,
+            Graphics::Gdi::{
+                BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS,
+                DeleteDC, DeleteObject, GetDIBits, GetObjectW, HGDIOBJ,
+            },
+            System::Com::IBindCtx,
+            UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK},
+        },
+        core::HSTRING,
+    };
+    unsafe {
+        let factory: IShellItemImageFactory =
+            SHCreateItemFromParsingName(&HSTRING::from(path), None::<&IBindCtx>).ok()?;
+        let bitmap = factory
+            .GetImage(SIZE { cx: size, cy: size }, SIIGBF_BIGGERSIZEOK)
+            .ok()?;
+        let object = HGDIOBJ(bitmap.0);
+        let mut info = BITMAP::default();
+        GetObjectW(
+            object,
+            std::mem::size_of::<BITMAP>() as i32,
+            Some((&mut info as *mut BITMAP).cast()),
+        );
+        let (width, height) = (info.bmWidth, info.bmHeight.abs());
+        let mut header = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut pixels = vec![0_u8; (width.max(0) * height * 4) as usize];
+        let dc = CreateCompatibleDC(None);
+        let rows = GetDIBits(
+            dc,
+            bitmap,
+            0,
+            height as u32,
+            Some(pixels.as_mut_ptr().cast()),
+            &mut header,
+            DIB_RGB_COLORS,
+        );
+        let _ = DeleteDC(dc);
+        let _ = DeleteObject(object);
+        if rows == 0 || width <= 0 || height <= 0 {
+            return None;
+        }
+        // BGRA to RGBA. Photo thumbnails often carry no alpha at all: show those opaque.
+        let opaque = pixels.as_chunks::<4>().0.iter().all(|p| p[3] == 0);
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+            if opaque {
+                pixel[3] = 255;
+            }
+        }
+        Some(([width as usize, height as usize], pixels))
+    }
+}
+/// Finder-style pocket image: photos get a real thumbnail, everything else Finder's icon.
+#[cfg(target_os = "macos")]
+pub fn shell_icon(path: &str, size: i32) -> Option<([usize; 2], Vec<u8>)> {
+    let lower = path.to_lowercase();
+    let photo = [".png", ".jpg", ".jpeg", ".webp"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+        && std::fs::metadata(path).is_ok_and(|meta| meta.len() < 40 << 20);
+    let image = match photo.then(|| image::open(path).ok()).flatten() {
+        Some(image) => image,
+        None => image::load_from_memory(&finder_icon_png(path, size)?).ok()?,
+    };
+    let rgba = image.thumbnail(size as u32, size as u32).into_rgba8();
+    Some((
+        [rgba.width() as usize, rgba.height() as usize],
+        rgba.into_raw(),
+    ))
+}
+/// Renders `iconForFile:` into a fixed-size bitmap so the sharpest representation is used.
+#[cfg(target_os = "macos")]
+fn finder_icon_png(path: &str, size: i32) -> Option<Vec<u8>> {
+    use objc2::ClassType;
+    use objc2_app_kit::{
+        NSBitmapImageFileType, NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace,
+        NSGraphicsContext, NSWorkspace,
+    };
+    use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize, NSString};
+    unsafe {
+        let icon = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(path));
+        let rep = NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            size as isize,
+            size as isize,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            0,
+            0,
+        )?;
+        let context = NSGraphicsContext::graphicsContextWithBitmapImageRep(&rep)?;
+        NSGraphicsContext::saveGraphicsState_class();
+        NSGraphicsContext::setCurrentContext(Some(&context));
+        let side = f64::from(size);
+        icon.drawInRect_fromRect_operation_fraction(
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(side, side)),
+            NSRect::ZERO,
+            NSCompositingOperation::SourceOver,
+            1.0,
+        );
+        NSGraphicsContext::restoreGraphicsState_class();
+        let png = rep
+            .representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())?;
+        Some(png.bytes().to_vec())
+    }
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn shell_icon(_path: &str, _size: i32) -> Option<([usize; 2], Vec<u8>)> {
+    None
+}
+
+/// Drags a pocket file out to Explorer, chats or mail exactly like File Explorer does.
+/// Blocks in OLE's drag loop until the drop or cancel.
+#[cfg(target_os = "windows")]
+pub fn drag_file_out(handle: Option<usize>, path: &str) -> Result<(), String> {
+    use windows::{
+        Win32::{
+            Foundation::{HWND, LPARAM, WPARAM},
+            System::{
+                Com::{IBindCtx, IDataObject},
+                Ole::{DROPEFFECT_COPY, DROPEFFECT_LINK, IDropSource},
+            },
+            UI::{
+                Shell::{BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop},
+                WindowsAndMessaging::{PostMessageW, WM_LBUTTONUP},
+            },
+        },
+        core::HSTRING,
+    };
+    let hwnd = handle.map(|h| HWND(h as *mut std::ffi::c_void));
+    let result = unsafe {
+        SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(path), None::<&IBindCtx>)
+            .and_then(|item| {
+                item.BindToHandler::<_, IDataObject>(None::<&IBindCtx>, &BHID_DataObject)
+            })
+            // No custom drop source: the shell supplies its own, plus the drag image.
+            .and_then(|data| {
+                SHDoDragDrop(
+                    hwnd,
+                    &data,
+                    None::<&IDropSource>,
+                    DROPEFFECT_COPY | DROPEFFECT_LINK,
+                )
+            })
+            .map(|_| ())
+            .map_err(|e| format!("Couldn't drag this file: {e}"))
+    };
+    // OLE's drag loop swallowed the button release, so egui would think it is still held.
+    if let Some(hwnd) = hwnd {
+        unsafe {
+            let _ = PostMessageW(Some(hwnd), WM_LBUTTONUP, WPARAM(0), LPARAM(0));
+        }
+    }
+    result
+}
+/// Window number of the notch while a macOS pocket drag runs, so its end can release egui.
+#[cfg(target_os = "macos")]
+static DRAG_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+#[cfg(target_os = "macos")]
+mod mac_drag {
+    use objc2::{
+        ClassType, DeclaredClass, declare_class, msg_send_id, mutability, rc::Retained,
+        runtime::NSObjectProtocol,
+    };
+    use objc2_app_kit::{
+        NSApplication, NSDragOperation, NSDraggingContext, NSDraggingSession, NSDraggingSource,
+        NSEvent, NSEventModifierFlags, NSEventType,
+    };
+    use objc2_foundation::{MainThreadMarker, NSObject, NSPoint};
+
+    declare_class!(
+        pub struct DragSource;
+
+        unsafe impl ClassType for DragSource {
+            type Super = NSObject;
+            type Mutability = mutability::MainThreadOnly;
+            const NAME: &'static str = "CikungPocketDragSource";
+        }
+
+        impl DeclaredClass for DragSource {}
+
+        unsafe impl NSObjectProtocol for DragSource {}
+
+        unsafe impl NSDraggingSource for DragSource {
+            #[method(draggingSession:sourceOperationMaskForDraggingContext:)]
+            fn operation_mask(
+                &self,
+                _session: &NSDraggingSession,
+                _context: NSDraggingContext,
+            ) -> NSDragOperation {
+                NSDragOperation::Copy | NSDragOperation::Link
+            }
+
+            #[method(draggingSession:endedAtPoint:operation:)]
+            fn ended(
+                &self,
+                _session: &NSDraggingSession,
+                _point: NSPoint,
+                _operation: NSDragOperation,
+            ) {
+                release_pointer();
+            }
+        }
+    );
+
+    impl DragSource {
+        pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
+            let this = mtm.alloc::<Self>().set_ivars(());
+            unsafe { msg_send_id![super(this), init] }
+        }
+    }
+
+    /// AppKit's drag session swallows the mouse-up; hand winit one so egui lets go too.
+    fn release_pointer() {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let window = super::DRAG_WINDOW.load(std::sync::atomic::Ordering::Relaxed);
+        let event = unsafe {
+            NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                NSEventType::LeftMouseUp,
+                NSPoint::new(0.0, 0.0),
+                NSEventModifierFlags::empty(),
+                0.0,
+                window,
+                None,
+                0,
+                1,
+                0.0,
+            )
+        };
+        if let Some(event) = event {
+            NSApplication::sharedApplication(mtm).postEvent_atStart(&event, false);
+        }
+    }
+}
+
+/// Drags a pocket file out to Finder, chats or mail exactly like Finder does.
+#[cfg(target_os = "macos")]
+pub fn drag_file_out(handle: Option<usize>, path: &str) -> Result<(), String> {
+    use objc2::{
+        ClassType,
+        runtime::{AnyObject, ProtocolObject},
+    };
+    use objc2_app_kit::{
+        NSApplication, NSDraggingItem, NSEvent, NSEventModifierFlags, NSEventType, NSView,
+        NSWorkspace,
+    };
+    use objc2_foundation::{MainThreadMarker, NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
+    let mtm = MainThreadMarker::new().ok_or("Dragging must start on the main thread.")?;
+    let view = handle.ok_or("The notch window is not ready yet.")? as *const NSView;
+    unsafe {
+        let view = &*view;
+        let window = view.window().ok_or("The notch window is not ready yet.")?;
+        let number = window.windowNumber();
+        // Use the live mouse event when there is one; otherwise describe the drag ourselves.
+        let event = NSApplication::sharedApplication(mtm)
+            .currentEvent()
+            .filter(|event| {
+                matches!(
+                    event.r#type(),
+                    NSEventType::LeftMouseDown | NSEventType::LeftMouseDragged
+                )
+            })
+            .or_else(|| {
+                NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                    NSEventType::LeftMouseDragged,
+                    window.mouseLocationOutsideOfEventStream(),
+                    NSEventModifierFlags::empty(),
+                    0.0,
+                    number,
+                    None,
+                    0,
+                    1,
+                    1.0,
+                )
+            })
+            .ok_or("macOS could not start the drag.")?;
+        let file = NSString::from_str(path);
+        let url = NSURL::fileURLWithPath(&file);
+        let item = NSDraggingItem::initWithPasteboardWriter(
+            NSDraggingItem::alloc(),
+            ProtocolObject::from_ref(&*url),
+        );
+        let icon = NSWorkspace::sharedWorkspace().iconForFile(&file);
+        let at = view.convertPoint_fromView(event.locationInWindow(), None);
+        let contents: &AnyObject = icon.as_ref();
+        item.setDraggingFrame_contents(
+            NSRect::new(
+                NSPoint::new(at.x - 24.0, at.y - 24.0),
+                NSSize::new(48.0, 48.0),
+            ),
+            Some(contents),
+        );
+        DRAG_WINDOW.store(number, std::sync::atomic::Ordering::Relaxed);
+        let source = mac_drag::DragSource::new(mtm);
+        view.beginDraggingSessionWithItems_event_source(
+            &NSArray::from_vec(vec![item]),
+            &event,
+            ProtocolObject::from_ref(&*source),
+        );
+        // ponytail: one tiny source object per drag outlives the session (never freed).
+        std::mem::forget(source);
+    }
+    Ok(())
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn drag_file_out(_handle: Option<usize>, _path: &str) -> Result<(), String> {
+    Err("Dragging files out of the pocket currently requires Windows or macOS.".into())
 }
 
 #[cfg(test)]
