@@ -1135,7 +1135,9 @@ mod tests {
             .spawn()
             .unwrap();
         child.stdin.take().unwrap().write_all(br#"{"hook_event_name":"PermissionRequest","session_id":"hook-test","cwd":"Local test fixture","tool_name":"Read","tool_input":{"file_path":"fixture.txt"}}"#).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(12);
+        // A cold PowerShell start on CI runners can take most of 12 s on its own;
+        // the hook itself still answers within its 5 s timeout once running.
+        let deadline = Instant::now() + Duration::from_secs(45);
         let mut decided = false;
         loop {
             if !decided {

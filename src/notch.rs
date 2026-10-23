@@ -82,8 +82,8 @@ impl Motion {
     }
 }
 
-/// Black surface that warms into `tint` toward its bottom edge, like Nusa's cover-tinted notch.
-pub fn paint_surface(painter: &Painter, rect: Rect, radius: f32, tint: Color32) {
+/// `base` surface that warms into `tint` toward its bottom edge, like Nusa's cover-tinted notch.
+pub fn paint_surface(painter: &Painter, rect: Rect, radius: f32, base: Color32, tint: Color32) {
     let corner = radius.round() as u8;
     painter.rect_filled(
         rect,
@@ -93,9 +93,9 @@ pub fn paint_surface(painter: &Painter, rect: Rect, radius: f32, tint: Color32) 
             sw: corner,
             se: corner,
         },
-        Color32::BLACK,
+        base,
     );
-    if tint == Color32::BLACK || rect.height() < 4.0 {
+    if tint == base || rect.height() < 4.0 {
         return;
     }
     // Inset by a pixel so the anti-aliased black edge stays outside the tint bands.
@@ -115,7 +115,7 @@ pub fn paint_surface(painter: &Painter, rect: Rect, radius: f32, tint: Color32) 
         };
         // Measured on Nusa: black for the top ~15%, then roughly t^1.5 to the tint.
         let t = (((y - rect.top()) / rect.height() - 0.15) / 0.85).clamp(0.0, 1.0);
-        let color = Color32::BLACK.lerp_to_gamma(tint, t.powf(1.5));
+        let color = base.lerp_to_gamma(tint, t.powf(1.5));
         mesh.colored_vertex(pos2(rect.left() + inset, y), color);
         mesh.colored_vertex(pos2(rect.right() - inset, y), color);
         if row > 0 {

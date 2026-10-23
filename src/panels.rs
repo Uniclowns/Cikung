@@ -1,5 +1,5 @@
 use crate::{
-    app::{Cikung, GRAY, ORANGE, WHITE, clock, heading},
+    app::{Cikung, accent, clock, heading, ink, muted, veil},
     cloud,
     media::{MediaCommand, PlaybackState},
     tools::FocusMode,
@@ -52,7 +52,7 @@ impl Cikung {
         });
         if self.tools.lyrics.lines.is_empty() {
             ui.add_space(18.0);
-            ui.label(RichText::new(self.lyrics_status()).color(GRAY));
+            ui.label(RichText::new(self.lyrics_status()).color(muted()));
             return;
         }
         let identity = self
@@ -61,7 +61,7 @@ impl Cikung {
             .map(|s| format!("{}\n{}", s.title, s.artist))
             .unwrap_or_default();
         if !self.lyrics_for.is_empty() && identity != self.lyrics_for {
-            ui.label(RichText::new(self.lyrics_status()).color(GRAY));
+            ui.label(RichText::new(self.lyrics_status()).color(muted()));
             return;
         }
         ui.add_space(14.0);
@@ -79,7 +79,7 @@ impl Cikung {
                 egui::Label::new(
                     RichText::new(&line.text)
                         .size(if highlighted { 22.0 } else { 16.0 })
-                        .color(if highlighted { WHITE } else { GRAY })
+                        .color(if highlighted { ink() } else { muted() })
                         .strong(),
                 )
                 .sense(if target.is_some() {
@@ -175,7 +175,7 @@ impl Cikung {
                 self.tools.focus.completed_sessions,
                 self.tools.focus.total_focus_secs / 60
             ))
-            .color(GRAY)
+            .color(muted())
             .size(12.0),
         );
     }
@@ -184,7 +184,7 @@ impl Cikung {
             ui.label(
                 RichText::new("Drag out anytime · click to open")
                     .size(11.0)
-                    .color(GRAY),
+                    .color(muted()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if !self.tools.shelf.is_empty()
@@ -224,7 +224,10 @@ impl Cikung {
                     23 + (drag * 9.0) as u8,
                     22,
                 ))
-                .stroke(egui::Stroke::new(1.0_f32, GRAY.lerp_to_gamma(ORANGE, drag)))
+                .stroke(egui::Stroke::new(
+                    1.0_f32,
+                    muted().lerp_to_gamma(accent(), drag),
+                ))
                 .corner_radius(12)
                 .inner_margin(14)
                 .show(ui, |ui| {
@@ -236,12 +239,12 @@ impl Cikung {
                             } else {
                                 "Drop files here"
                             })
-                            .color(WHITE),
+                            .color(ink()),
                         );
                         ui.label(
                             RichText::new("Originals stay exactly where they are.")
                                 .size(11.0)
-                                .color(GRAY),
+                                .color(muted()),
                         );
                     });
                 });
@@ -310,7 +313,7 @@ impl Cikung {
         let alpha = (t * 3.0).min(1.0);
         let painter = ui.painter();
         if response.hovered() || response.dragged() {
-            painter.rect_filled(rect, 10, Color32::from_white_alpha(14));
+            painter.rect_filled(rect, 10, veil(14));
         }
         let thumb = egui::Rect::from_center_size(
             egui::pos2(rect.center().x, rect.top() + 28.0),
@@ -345,8 +348,8 @@ impl Cikung {
                 color,
             );
         };
-        line(&item.name, rect.top() + 56.0, 11.0, WHITE);
-        line(&card.detail, rect.top() + 72.0, 10.0, GRAY);
+        line(&item.name, rect.top() + 56.0, 11.0, ink());
+        line(&card.detail, rect.top() + 72.0, 10.0, muted());
         let mut action = None;
         response.context_menu(|ui| {
             if ui.button("Open").clicked() {
@@ -397,7 +400,7 @@ impl Cikung {
         ui.label(
             RichText::new("Local time · leave empty for no reminder")
                 .size(10.0)
-                .color(GRAY),
+                .color(muted()),
         );
         if editing && ui.small_button("Cancel edit").clicked() {
             self.task_edit = None;
@@ -434,7 +437,11 @@ impl Cikung {
                         [width, 24.0],
                         egui::Checkbox::new(
                             &mut done,
-                            RichText::new(&task.text).color(if task.done { GRAY } else { WHITE }),
+                            RichText::new(&task.text).color(if task.done {
+                                muted()
+                            } else {
+                                ink()
+                            }),
                         ),
                     )
                     .on_hover_text(&task.text)
@@ -466,7 +473,7 @@ impl Cikung {
                         }
                     ))
                     .size(10.0)
-                    .color(GRAY),
+                    .color(muted()),
                 );
             }
         }
@@ -479,7 +486,7 @@ impl Cikung {
             }
         }
         if self.tools.tasks.is_empty() {
-            ui.label(RichText::new("Nothing to chase. Enjoy the quiet.").color(GRAY));
+            ui.label(RichText::new("Nothing to chase. Enjoy the quiet.").color(muted()));
         }
     }
     pub(crate) fn water(&mut self, ui: &mut egui::Ui) {
@@ -501,7 +508,7 @@ impl Cikung {
         );
         ui.add(
             egui::ProgressBar::new((total as f32 / goal as f32).min(1.0))
-                .fill(ORANGE)
+                .fill(accent())
                 .text(format!(
                     "{} drinks today{}",
                     self.tools.water.drank_today,
@@ -516,7 +523,7 @@ impl Cikung {
             ui.label(
                 RichText::new("Your earlier drink count is kept. Volume starts with new drinks.")
                     .size(10.0)
-                    .color(GRAY),
+                    .color(muted()),
             );
         }
         ui.horizontal_wrapped(|ui| {
@@ -557,25 +564,25 @@ impl Cikung {
                 ui.label("From"); changed |= ui.add(egui::DragValue::new(&mut self.tools.water.active_start_hour).range(0..=23).suffix(":00")).changed();
                 ui.label("to"); changed |= ui.add(egui::DragValue::new(&mut self.tools.water.active_end_hour).range(0..=23).suffix(":00")).changed();
             });
-            ui.label(RichText::new("Local hours · matching start/end means all day. Reminders rest after your goal.").size(10.0).color(GRAY));
+            ui.label(RichText::new("Local hours · matching start/end means all day. Reminders rest after your goal.").size(10.0).color(muted()));
             if changed { self.tools.water.reschedule(); }
         });
         if let Some(seconds) = self.tools.water.seconds_until_reminder() {
             ui.label(
                 RichText::new(format!("Next reminder in {}", clock(seconds as f64)))
                     .size(11.0)
-                    .color(GRAY),
+                    .color(muted()),
             );
         }
         ui.collapsing("Recent daily totals", |ui| {
             if self.tools.water.history.is_empty() {
-                ui.label(RichText::new("Log a drink to start your volume history.").color(GRAY));
+                ui.label(RichText::new("Log a drink to start your volume history.").color(muted()));
             }
             for day in self.tools.water.history.iter().rev().take(7) {
-                ui.label(RichText::new(&day.day).size(10.0).color(GRAY));
+                ui.label(RichText::new(&day.day).size(10.0).color(muted()));
                 ui.add(
                     egui::ProgressBar::new((day.ml as f32 / goal as f32).min(1.0))
-                        .fill(ORANGE)
+                        .fill(accent())
                         .text(format!("{} ml", day.ml)),
                 );
             }
@@ -594,7 +601,7 @@ impl Cikung {
             if ui.button("Import text").clicked()&&let Some(path)=rfd::FileDialog::new().add_filter("Transcript",&["txt","md","vtt","srt"]).pick_file(){match self.tools.import_transcript(&path){Ok(id)=>{self.note_selected=Some(id);self.stats().notes+=1;},Err(e)=>self.toast("Notes",e)}}
         });
         ui.collapsing("Audio files and transcription",|ui|{
-            ui.label(RichText::new("Transcribe uploads a selected audio track to OpenAI using your saved OpenAI key. Local Whisper can keep audio on this PC.").size(11.0).color(GRAY));
+            ui.label(RichText::new("Transcribe uploads a selected audio track to OpenAI using your saved OpenAI key. Local Whisper can keep audio on this PC.").size(11.0).color(muted()));
             if ui.button("Add audio file").clicked()&&let Some(path)=rfd::FileDialog::new().add_filter("Audio",&["wav","mp3","m4a","flac","ogg","webm"]).pick_file(){self.recording_files.push(path);}
             for path in self.recording_files.clone(){ui.horizontal(|ui|{ui.add_sized([320.0,22.0],egui::Label::new(path.file_name().unwrap_or_default().to_string_lossy()).truncate()).on_hover_text(path.display().to_string());if ui.add_enabled(!self.transcription_busy(&path),egui::Button::new("Transcribe")).clicked(){let result=self.transcribe_file(path.clone());self.report(result,"Transcription requested. This audio is being uploaded.");}});}
             if ui.add_enabled(!self.dictation.busy(),egui::Button::new("Transcribe offline with whisper.cpp")).clicked()&&let Some(engine)=rfd::FileDialog::new().set_title("Choose your whisper.cpp executable").pick_file()&&let Some(model)=rfd::FileDialog::new().set_title("Choose your Whisper model").pick_file()&&let Some(audio)=rfd::FileDialog::new().set_title("Choose local audio").pick_file(){self.dictation_to_notes=true;let result=self.dictation.transcribe_audio_with_model(&engine,&audio,Some(&model));self.report(result,"Offline transcription started.");}
@@ -685,7 +692,7 @@ impl Cikung {
         }
         if self.show_agent_setup {
             if let Some(bridge) = &self.bridge {
-                ui.label(RichText::new("Connect tools with scripts/cikung-hook.ps1. No tool settings are changed automatically.").color(GRAY).size(11.0));
+                ui.label(RichText::new("Connect tools with scripts/cikung-hook.ps1. No tool settings are changed automatically.").color(muted()).size(11.0));
                 ui.monospace(bridge.local_endpoint());
                 if ui
                     .button(if self.show_agent_token {
@@ -712,7 +719,7 @@ impl Cikung {
                         bridge.agent_token()
                     ));
                 }
-                ui.label(RichText::new("The token changes when Cikung restarts. Hook installation steps are in docs/agent-phone-link.md.").size(10.0).color(GRAY));
+                ui.label(RichText::new("The token changes when Cikung restarts. Hook installation steps are in docs/agent-phone-link.md.").size(10.0).color(muted()));
             } else {
                 ui.label("Bridge is unavailable in this preview, or could not start.");
             }
@@ -724,8 +731,8 @@ impl Cikung {
             .unwrap_or_default();
         if sessions.is_empty() {
             ui.add_space(15.0);
-            ui.label(RichText::new("No agent sessions connected yet.").color(GRAY));
-            ui.label(RichText::new("Choose a project and start a connected terminal above. Available means the CLI was found; live activity appears only after receiving an event.").size(11.0).color(GRAY));
+            ui.label(RichText::new("No agent sessions connected yet.").color(muted()));
+            ui.label(RichText::new("Choose a project and start a connected terminal above. Available means the CLI was found; live activity appears only after receiving an event.").size(11.0).color(muted()));
         }
         for session in sessions {
             ui.add_space(7.0);
@@ -737,12 +744,12 @@ impl Cikung {
                 {
                     self.selected_agent = Some(session.session_id.clone());
                 }
-                ui.label(RichText::new(&session.project).size(11.0).color(GRAY));
+                ui.label(RichText::new(&session.project).size(11.0).color(muted()));
             });
             ui.label(&session.detail);
             if let Some(id) = &session.request_id {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Needs your permission").color(ORANGE));
+                    ui.label(RichText::new("Needs your permission").color(accent()));
                     if ui.button("Allow once").clicked()
                         && let Some(bridge) = &self.bridge
                     {
@@ -762,7 +769,7 @@ impl Cikung {
                     ui.label(
                         RichText::new(format!("{} · {}", step.state, step.detail))
                             .size(11.0)
-                            .color(GRAY),
+                            .color(muted()),
                     );
                 }
                 if let Some(diff) = session.file_diff {
@@ -780,7 +787,11 @@ impl Cikung {
             self.prefs.chat.provider.name(),
         );
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&self.prefs.chat.model).color(GRAY).size(11.0));
+            ui.label(
+                RichText::new(&self.prefs.chat.model)
+                    .color(muted())
+                    .size(11.0),
+            );
             if ui.small_button("Configure").clicked() {
                 self.open_chat_settings();
             }
@@ -798,7 +809,7 @@ impl Cikung {
                     "Cikung"
                 })
                 .size(11.0)
-                .color(ORANGE),
+                .color(accent()),
             );
             ui.label(&message.content);
         }
@@ -837,7 +848,7 @@ impl Cikung {
                     "Messages go to your selected provider"
                 })
                 .size(10.0)
-                .color(GRAY),
+                .color(muted()),
             );
         });
     }
@@ -879,7 +890,7 @@ impl Cikung {
             for card in cards {
                 ui.add_space(7.0);
                 ui.label(RichText::new(&card.title).strong());
-                ui.label(RichText::new(&card.detail).color(GRAY));
+                ui.label(RichText::new(&card.detail).color(muted()));
                 if !card.url.is_empty() {
                     ui.hyperlink_to("Open in browser", &card.url);
                 }
@@ -890,7 +901,7 @@ impl Cikung {
                     "Connect this service below, then refresh. Account data is never fabricated.",
                 )
                 .size(12.0)
-                .color(GRAY),
+                .color(muted()),
             );
         }
         ui.add_space(8.0);
@@ -994,24 +1005,24 @@ impl Cikung {
                 );
                 self.qr = Some((url.clone(), texture));
             }
-            ui.horizontal(|ui|{if let Some((_,texture))=&self.qr{ui.image((texture.id(),Vec2::splat(170.0)));}ui.vertical(|ui|{ui.label("Scan to pair");ui.label(RichText::new(format!("{} paired phone sessions",snapshot.paired_phones)).color(GRAY));if ui.button("Copy pairing link").clicked(){ui.ctx().copy_text(url.clone());}ui.label(RichText::new("The link grants access. Share it only with your phone. Disabling the connection revokes every session.").size(11.0).color(GRAY));});});
-            ui.label(RichText::new("The companion runs in your phone browser. Add it to your Home Screen. Native iOS Live Activities and Android widgets are separate future clients.").size(11.0).color(GRAY));
-            ui.label(RichText::new("Local HTTP · use a trusted Wi-Fi network. Allow the private-network firewall prompt if Windows asks.").size(10.0).color(GRAY));
+            ui.horizontal(|ui|{if let Some((_,texture))=&self.qr{ui.image((texture.id(),Vec2::splat(170.0)));}ui.vertical(|ui|{ui.label("Scan to pair");ui.label(RichText::new(format!("{} paired phone sessions",snapshot.paired_phones)).color(muted()));if ui.button("Copy pairing link").clicked(){ui.ctx().copy_text(url.clone());}ui.label(RichText::new("The link grants access. Share it only with your phone. Disabling the connection revokes every session.").size(11.0).color(muted()));});});
+            ui.label(RichText::new("The companion runs in your phone browser. Add it to your Home Screen. Native iOS Live Activities and Android widgets are separate future clients.").size(11.0).color(muted()));
+            ui.label(RichText::new("Local HTTP · use a trusted Wi-Fi network. Allow the private-network firewall prompt if Windows asks.").size(10.0).color(muted()));
         } else {
             ui.add_space(20.0);
             ui.label(
-                RichText::new("Phone access is off. The desktop app stays local.").color(GRAY),
+                RichText::new("Phone access is off. The desktop app stays local.").color(muted()),
             );
         }
         if let Some(error) = snapshot.last_error {
-            ui.label(RichText::new(error).color(ORANGE));
+            ui.label(RichText::new(error).color(accent()));
         }
     }
     pub(crate) fn style_panel(&mut self, ui: &mut egui::Ui) {
         self.cat_gallery(ui);
         ui.add_space(10.0);
         ui.checkbox(&mut self.prefs.reduced_motion, "Reduce motion");
-        ui.label(RichText::new("Cikung breathes while idle, bops while music plays, and reacts when you poke. Right-click the cat for quick options.").size(12.0).color(GRAY));
+        ui.label(RichText::new("Cikung breathes while idle, bops while music plays, and reacts when you poke. Right-click the cat for quick options.").size(12.0).color(muted()));
         ui.collapsing("Your last seven days", |ui| {
             for (day, stats) in self.prefs.days.iter().rev().take(7) {
                 ui.label(format!(
@@ -1024,7 +1035,7 @@ impl Cikung {
                     RichText::new(
                         "Your recap will grow as you use the tools. Everything is stored locally.",
                     )
-                    .color(GRAY),
+                    .color(muted()),
                 );
             }
         });

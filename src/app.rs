@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU8, Ordering},
     time::{Duration, Instant},
 };
 mod agents;
@@ -30,6 +31,101 @@ mod settings_window;
 pub(crate) const WHITE: Color32 = Color32::from_rgb(245, 245, 247);
 pub(crate) const GRAY: Color32 = Color32::from_rgb(145, 145, 152);
 pub(crate) const ORANGE: Color32 = Color32::from_rgb(255, 169, 76);
+
+/// Notch colour theme, chosen in Settings → General.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum Theme {
+    /// Black that warms into the album cover's colour (the original look).
+    #[default]
+    Album,
+    Black,
+    White,
+    Orange,
+}
+impl Theme {
+    pub const ALL: [Self; 4] = [Self::Album, Self::Black, Self::White, Self::Orange];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Album => "Album colour",
+            Self::Black => "Pure black",
+            Self::White => "White",
+            Self::Orange => "Orange",
+        }
+    }
+    /// Surface, main text, secondary text and accent.
+    fn colors(self) -> [Color32; 4] {
+        match self {
+            Self::Album | Self::Black => [Color32::BLACK, WHITE, GRAY, ORANGE],
+            Self::White => [
+                Color32::from_rgb(246, 246, 248),
+                Color32::from_rgb(22, 22, 26),
+                Color32::from_rgb(108, 108, 116),
+                Color32::from_rgb(214, 106, 0),
+            ],
+            Self::Orange => [
+                Color32::from_rgb(255, 142, 38),
+                Color32::from_rgb(30, 16, 4),
+                Color32::from_rgb(112, 58, 14),
+                Color32::from_rgb(255, 250, 240),
+            ],
+        }
+    }
+}
+
+/// Theme in effect while drawing: the notch uses the chosen one, Settings stays dark.
+static PAINTING: AtomicU8 = AtomicU8::new(0);
+pub(crate) fn set_painting_theme(theme: Theme) {
+    PAINTING.store(theme as u8, Ordering::Relaxed);
+}
+fn painting() -> Theme {
+    Theme::ALL[usize::from(PAINTING.load(Ordering::Relaxed)) % Theme::ALL.len()]
+}
+pub(crate) fn paper() -> Color32 {
+    painting().colors()[0]
+}
+pub(crate) fn ink() -> Color32 {
+    painting().colors()[1]
+}
+pub(crate) fn muted() -> Color32 {
+    painting().colors()[2]
+}
+pub(crate) fn accent() -> Color32 {
+    painting().colors()[3]
+}
+/// Hover and card wash: the text colour at low alpha, readable on light and dark themes.
+pub(crate) fn veil(alpha: u8) -> Color32 {
+    let c = ink();
+    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha)
+}
+/// Light themes swap the dark widget fills for washes of their text colour.
+fn theme_visuals(ui: &mut egui::Ui, theme: Theme) {
+    if matches!(theme, Theme::Album | Theme::Black) {
+        return;
+    }
+    let [paper, ink, _, _] = theme.colors();
+    let wash = |a: u8| Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), a);
+    let v = ui.visuals_mut();
+    v.override_text_color = Some(ink);
+    v.panel_fill = paper;
+    v.window_fill = paper;
+    v.extreme_bg_color = wash(14);
+    v.faint_bg_color = wash(8);
+    v.selection.bg_fill = wash(60);
+    v.widgets.noninteractive.bg_stroke.color = wash(40);
+    for (widget, alpha) in [
+        (&mut v.widgets.noninteractive, 0),
+        (&mut v.widgets.inactive, 22),
+        (&mut v.widgets.hovered, 38),
+        (&mut v.widgets.active, 56),
+        (&mut v.widgets.open, 38),
+    ] {
+        widget.fg_stroke.color = ink;
+        if alpha > 0 {
+            widget.bg_fill = wash(alpha);
+            widget.weak_bg_fill = wash(alpha);
+        }
+    }
+}
 
 pub struct Launch {
     pub demo: bool,
@@ -177,6 +273,7 @@ pub(crate) struct Preferences {
     pub agents: crate::agent_connect::Settings,
     pub desktop_apps: crate::desktop_apps::Settings,
     pub reduced_motion: bool,
+    pub theme: Theme,
     pub always_on_top: bool,
     pub hover_open: bool,
     pub music_on_hover: bool,
@@ -211,6 +308,7 @@ impl Default for Preferences {
             agents: crate::agent_connect::Settings::default(),
             desktop_apps: crate::desktop_apps::Settings::default(),
             reduced_motion: false,
+            theme: Theme::default(),
             always_on_top: true,
             hover_open: true,
             music_on_hover: true,
@@ -1387,8 +1485,14 @@ impl eframe::App for Cikung {
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
             } else if let Some((camera, height)) = self.camera_notch {
-                // Hug the camera like a live activity: cat on the left wing, music bars right.
-                Vec2::new(camera + 2.0 * 46.0, height)
+                // Wings either side of the camera: cat and title left, clock, date and
+                // music bars right. A live lyric adds a strip below the camera.
+                let strip = if !self.demo && self.current_lyric().is_some() {
+                    26.0
+                } else {
+                    0.0
+                };
+                Vec2::new(camera + 2.0 * 130.0, height + strip)
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
             } else {
@@ -1434,9 +1538,14 @@ impl eframe::App for Cikung {
         let center = host_width / 2.0;
         let surface = notch::aligned_surface_rect(center * 2.0, size, scale);
         let radius = 15.0 + openness * 7.0;
-        // Music keeps its cover tint; other open pages fade back to plain black.
-        let tint = if self.expanded && (self.page != Page::Music || self.more_open) {
-            Color32::BLACK
+        // The notch draws in the chosen theme; Settings is reset to dark further down.
+        set_painting_theme(self.prefs.theme);
+        let base = paper();
+        // Album colour keeps the cover tint for music; everything else fades to the base.
+        let tint = if self.prefs.theme != Theme::Album
+            || (self.expanded && (self.page != Page::Music || self.more_open))
+        {
+            base
         } else {
             self.tint
         };
@@ -1453,7 +1562,14 @@ impl eframe::App for Cikung {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
-                notch::paint_surface(ui.painter(), surface, radius, Color32::from_rgb(r, g, b));
+                theme_visuals(ui, self.prefs.theme);
+                notch::paint_surface(
+                    ui.painter(),
+                    surface,
+                    radius,
+                    base,
+                    Color32::from_rgb(r, g, b),
+                );
                 let header_rect = Rect::from_min_size(
                     surface.min + Vec2::new(14.0, 2.0),
                     Vec2::new((size.x - 28.0).max(1.0), 36.0),
@@ -1465,6 +1581,28 @@ impl eframe::App for Cikung {
                 );
                 header.set_clip_rect(surface.intersect(ui.clip_rect()));
                 self.header(&mut header);
+                // Mac camera notch: the live lyric hangs in a strip just below the camera.
+                if let Some((_, notch_height)) = self.camera_notch
+                    && openness < 0.65
+                    && !self.demo
+                    && let Some(line) = self.current_lyric().map(str::to_owned)
+                {
+                    let strip = Rect::from_min_size(
+                        surface.min + Vec2::new(14.0, notch_height),
+                        Vec2::new((size.x - 28.0).max(1.0), 24.0),
+                    );
+                    let mut child = ui.new_child(
+                        egui::UiBuilder::new()
+                            .id_salt("notch-lyric-strip")
+                            .max_rect(strip),
+                    );
+                    child.set_clip_rect(surface.intersect(ui.clip_rect()));
+                    if notch_ui::lyric_ticker(&mut child, &line, self.prefs.reduced_motion)
+                        .clicked()
+                    {
+                        self.expanded = !self.expanded;
+                    }
+                }
                 let reveal = ((openness - 0.3) / 0.7).clamp(0.0, 1.0);
                 let opacity = reveal * reveal * (3.0 - 2.0 * reveal);
                 let progress = self.content_motion.begin(
@@ -1563,6 +1701,8 @@ impl eframe::App for Cikung {
                 .expect("save native audit");
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+        // Settings and captures keep the dark palette whatever the notch theme is.
+        set_painting_theme(Theme::Album);
         self.capture_window(ctx, Some(surface));
         self.settings_window(ctx);
         if self.settings_save {
@@ -1616,9 +1756,9 @@ impl eframe::App for Cikung {
 
 pub(crate) fn heading(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.add_space(9.0);
-    ui.label(RichText::new(title).size(18.0).color(WHITE));
+    ui.label(RichText::new(title).size(18.0).color(ink()));
     if !subtitle.is_empty() {
-        ui.label(RichText::new(subtitle).size(12.0).color(GRAY));
+        ui.label(RichText::new(subtitle).size(12.0).color(muted()));
     }
     ui.add_space(9.0);
 }

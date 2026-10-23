@@ -13,12 +13,12 @@ impl Cikung {
                     ui.label(
                         RichText::new("Start a song, video, or podcast on your PC.")
                             .size(12.0)
-                            .color(GRAY),
+                            .color(muted()),
                     );
                     ui.label(
                         RichText::new("Spotify · YouTube · VLC")
                             .size(10.0)
-                            .color(GRAY),
+                            .color(muted()),
                     );
                 });
             });
@@ -35,10 +35,10 @@ impl Cikung {
                         }),
                 )
                 .size(11.0)
-                .color(GRAY),
+                .color(muted()),
             );
             ui.add_space(8.0);
-            ui.label(RichText::new("Your player needs to share playback with the system. VLC setup is in Settings.").size(10.0).color(GRAY));
+            ui.label(RichText::new("Your player needs to share playback with the system. VLC setup is in Settings.").size(10.0).color(muted()));
             return;
         };
         ui.horizontal_top(|ui| {
@@ -65,7 +65,7 @@ impl Cikung {
                                         Vec2::new(3.0, height),
                                     ),
                                     2,
-                                    ORANGE,
+                                    accent(),
                                 );
                             }
                         }
@@ -75,7 +75,7 @@ impl Cikung {
                             ui.add_space(6.0);
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(&session.title).size(16.0).color(WHITE),
+                                    RichText::new(&session.title).size(16.0).color(ink()),
                                 )
                                 .truncate(),
                             )
@@ -88,7 +88,7 @@ impl Cikung {
                                         &session.artist
                                     })
                                     .size(12.0)
-                                    .color(GRAY),
+                                    .color(muted()),
                                 )
                                 .truncate(),
                             );
@@ -100,9 +100,9 @@ impl Cikung {
                                         PlaybackState::Stopped => "Stopped",
                                     })
                                     .size(10.0)
-                                    .color(ORANGE),
+                                    .color(accent()),
                                 );
-                                ui.label(RichText::new(&session.source).size(10.0).color(GRAY));
+                                ui.label(RichText::new(&session.source).size(10.0).color(muted()));
                             });
                         });
                     });
@@ -111,7 +111,7 @@ impl Cikung {
                     // Elapsed · bar · remaining on one line, like Nusa.
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.label(RichText::new(clock(position)).size(11.0).color(WHITE));
+                        ui.label(RichText::new(clock(position)).size(11.0).color(ink()));
                         let bar = (ui.available_width() - 48.0).max(40.0);
                         if session.can_seek && session.duration_secs > 0.0 && !self.demo {
                             let seek_id =
@@ -123,7 +123,7 @@ impl Cikung {
                                 .scope(|ui| {
                                     ui.spacing_mut().slider_width = bar;
                                     ui.spacing_mut().slider_rail_height = 3.0;
-                                    ui.visuals_mut().selection.bg_fill = WHITE;
+                                    ui.visuals_mut().selection.bg_fill = ink();
                                     ui.add(
                                         egui::Slider::new(&mut seek, 0.0..=session.duration_secs)
                                             .show_value(false)
@@ -148,7 +148,7 @@ impl Cikung {
                                 } else {
                                     0.0
                                 })
-                                .fill(WHITE)
+                                .fill(ink())
                                 .desired_width(bar)
                                 .desired_height(3.0),
                             );
@@ -160,7 +160,7 @@ impl Cikung {
                                 "–:––".into()
                             })
                             .size(11.0)
-                            .color(GRAY),
+                            .color(muted()),
                         );
                     });
                     ui.add_space(4.0);
@@ -218,7 +218,7 @@ impl Cikung {
             .as_ref()
             .map_or_else(|| "Nothing playing".to_owned(), |s| s.source.clone());
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Player").size(11.0).color(GRAY));
+            ui.label(RichText::new("Player").size(11.0).color(muted()));
             egui::ComboBox::from_id_salt("players")
                 .selected_text(format!(
                     "{} · {}",
@@ -268,7 +268,7 @@ impl Cikung {
             }
         });
         ui.horizontal(|ui| {
-            ui.label(RichText::new("System volume").size(11.0).color(GRAY));
+            ui.label(RichText::new("System volume").size(11.0).color(muted()));
             ui.add_enabled_ui(
                 cfg!(any(target_os = "windows", target_os = "macos")),
                 |ui| {
@@ -303,7 +303,7 @@ impl Cikung {
                 "Find lyrics or add an LRC file to follow along."
             })
             .size(11.0)
-            .color(GRAY),
+            .color(muted()),
         );
         ui.add_space(8.0);
         ui.horizontal(|ui| {
@@ -370,7 +370,7 @@ impl Cikung {
                 let galley = painter.layout(
                     lines[index].text.clone(),
                     egui::FontId::proportional(17.0),
-                    WHITE,
+                    ink(),
                     rect.width(),
                 );
                 tops.push(y);
@@ -403,7 +403,7 @@ impl Cikung {
             } else {
                 Color32::from_gray(84)
             };
-            painter.galley_with_override_text_color(pos, galley, base.lerp_to_gamma(WHITE, lit));
+            painter.galley_with_override_text_color(pos, galley, base.lerp_to_gamma(ink(), lit));
             if let Some(target) = self.lyric_seek_target(lines[index].time_secs) {
                 let response = ui.interact(row, id.with(index), Sense::click());
                 if response.hovered() {
@@ -538,7 +538,7 @@ fn transport(ui: &mut egui::Ui, icon: Transport, enabled: bool, primary: bool) -
             .frame(false)
             .min_size(Vec2::splat(size)),
     );
-    let color = WHITE.gamma_multiply(if enabled { 1.0 } else { 0.35 });
+    let color = ink().gamma_multiply(if enabled { 1.0 } else { 0.35 });
     let c = response.rect.center();
     let painter = ui.painter();
     if response.hovered() {
@@ -547,7 +547,7 @@ fn transport(ui: &mut egui::Ui, icon: Transport, enabled: bool, primary: bool) -
         } else {
             22
         };
-        painter.circle_filled(c, size / 2.0, Color32::from_white_alpha(alpha));
+        painter.circle_filled(c, size / 2.0, veil(alpha));
     }
     let s = if primary { 1.45 } else { 1.0 };
     match icon {
@@ -564,7 +564,7 @@ fn transport(ui: &mut egui::Ui, icon: Transport, enabled: bool, primary: bool) -
                 Stroke::NONE,
             ));
             for x in [-2.8, 2.8] {
-                painter.circle_filled(bubble.center() + Vec2::new(x, 0.0), 1.7, Color32::BLACK);
+                painter.circle_filled(bubble.center() + Vec2::new(x, 0.0), 1.7, paper());
             }
         }
         Transport::Pause => {

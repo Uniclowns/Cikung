@@ -25,9 +25,9 @@ impl Cikung {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             let color = if app.state == State::Ready {
-                ORANGE
+                accent()
             } else {
-                GRAY
+                muted()
             };
             ui.label(
                 RichText::new(format!("● {}", app.state.label()))
@@ -51,13 +51,13 @@ impl Cikung {
                 );
             });
         });
-        ui.label(RichText::new(&app.detail).size(11.0).color(GRAY));
+        ui.label(RichText::new(&app.detail).size(11.0).color(muted()));
         if !app.title.is_empty() && !matches!(app.title.as_str(), "ChatGPT" | "Claude") {
             ui.add(
                 egui::Label::new(
                     RichText::new(format!("Window: {}", app.title))
                         .size(10.0)
-                        .color(GRAY),
+                        .color(muted()),
                 )
                 .truncate(),
             );
@@ -65,7 +65,7 @@ impl Cikung {
         ui.add_space(7.0);
         egui::Frame::new().fill(Color32::from_gray(14)).corner_radius(10).inner_margin(10).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new("Active conversation").size(10.0).color(GRAY));
+            ui.label(RichText::new("Active conversation").size(10.0).color(muted()));
             let height = if ui.available_width() > 600.0 { 220.0 } else { 90.0 };
             egui::ScrollArea::vertical().id_salt(("desktop-conversation", target.index())).max_height(height).stick_to_bottom(true).show(ui, |ui| {
                 ui.set_min_height(42.0);
@@ -104,7 +104,7 @@ impl Cikung {
                 self.toast("Desktop app", error);
             }
         });
-        ui.label(RichText::new("Uses your desktop app and its current chat. Messages are sent only when you press Send here.").size(10.0).color(GRAY));
+        ui.label(RichText::new("Uses your desktop app and its current chat. Messages are sent only when you press Send here.").size(10.0).color(muted()));
     }
     fn agent_cli_connections(&mut self, ui: &mut egui::Ui) {
         let selected = self.prefs.agents.selected;
@@ -123,7 +123,7 @@ impl Cikung {
                         &self.prefs.agents.project
                     })
                     .size(11.0)
-                    .color(GRAY),
+                    .color(muted()),
                 )
                 .truncate(),
             );
@@ -138,7 +138,7 @@ impl Cikung {
             ui.label(
                 RichText::new(agent_connect::codex::REVIEW_NOTICE)
                     .size(11.0)
-                    .color(ORANGE),
+                    .color(accent()),
             );
         }
         let available = Path::new(&self.prefs.agents.executables[selected.index()]).is_file()
@@ -166,7 +166,7 @@ impl Cikung {
                 "Terminal opened. Activity will appear when the agent sends its hooks.",
             );
         }
-        ui.label(RichText::new("Launches a new connected CLI session. Existing chats and global agent settings stay with their apps.").size(10.0).color(GRAY));
+        ui.label(RichText::new("Launches a new connected CLI session. Existing chats and global agent settings stay with their apps.").size(10.0).color(muted()));
         ui.collapsing("Connection settings", |ui| {
             ui.label("Agent executable");
             ui.add(

@@ -30,14 +30,9 @@ impl Cikung {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 9.0;
             self.draw_cat(ui, 31.0);
+            // Mac camera notch: nothing is drawn behind the camera; the live lyric
+            // hangs in a strip below it instead (see `update`).
             let camera = self.camera_notch.map(|(gap, _)| gap);
-            if camera.is_some() && !show_actions {
-                // Collapsed under a Mac camera notch: cat left, music bars right, and
-                // nothing drawn behind the camera itself.
-                ui.add_space((width - 31.0 - 20.0 - 18.0).max(0.0));
-                self.eq_bars(ui);
-                return;
-            }
             let notice = self.notices.back().filter(|n| {
                 matches!(
                     n.title.as_str(),
@@ -79,6 +74,7 @@ impl Cikung {
             };
             // Collapsed and playing with synced lyrics: show the live line like Nusa does.
             let lyric = (!show_actions
+                && camera.is_none()
                 && notice.is_none()
                 && self.file_hover.is_none()
                 && !self.recorder.is_recording()
@@ -136,14 +132,14 @@ impl Cikung {
                 egui::Align2::CENTER_TOP,
                 clock,
                 egui::FontId::proportional(12.0),
-                WHITE,
+                ink(),
             );
             ui.painter().text(
                 clock_rect.center_bottom() - Vec2::new(0.0, 2.0),
                 egui::Align2::CENTER_BOTTOM,
                 date,
                 egui::FontId::proportional(9.0),
-                GRAY,
+                muted(),
             );
             if clock_response
                 .on_hover_text(format!(
@@ -200,7 +196,7 @@ impl Cikung {
                     Vec2::new(2.0, h),
                 ),
                 1,
-                if active { ORANGE } else { GRAY },
+                if active { accent() } else { muted() },
             );
         }
     }
@@ -261,13 +257,13 @@ impl Cikung {
                 egui::Label::new(
                     RichText::new(format!("{} · {}", notice.title, notice.text))
                         .size(10.0)
-                        .color(ORANGE),
+                        .color(accent()),
                 )
                 .truncate(),
             )
             .on_hover_text(&notice.text);
         } else if self.demo {
-            ui.label(RichText::new("Preview").size(10.0).color(GRAY));
+            ui.label(RichText::new("Preview").size(10.0).color(muted()));
         }
     }
 
@@ -303,7 +299,7 @@ impl Cikung {
                 ui.painter().rect_filled(
                     Rect::from_center_size(dot, Vec2::new(14.0, 5.0)),
                     3,
-                    WHITE.gamma_multiply(opacity),
+                    ink().gamma_multiply(opacity),
                 );
             } else {
                 let gray = if hovered { 170 } else { 85 };
@@ -354,7 +350,7 @@ impl Cikung {
             ui.painter().circle_filled(
                 rect.center(),
                 11.0,
-                Color32::from_white_alpha(if hovered { 40 } else { 16 }).gamma_multiply(opacity),
+                veil(if hovered { 40 } else { 16 }).gamma_multiply(opacity),
             );
             let (c, s) = (rect.center(), delta as f32);
             ui.painter().add(egui::Shape::line(
@@ -365,7 +361,7 @@ impl Cikung {
                 ],
                 Stroke::new(
                     1.8_f32,
-                    WHITE.gamma_multiply(opacity * if hovered { 1.0 } else { 0.65 }),
+                    ink().gamma_multiply(opacity * if hovered { 1.0 } else { 0.65 }),
                 ),
             ));
             if interactive
@@ -399,7 +395,7 @@ impl Cikung {
         ui.label(
             RichText::new("Every tool, one tap away.")
                 .size(14.0)
-                .color(GRAY),
+                .color(muted()),
         );
         ui.add_space(12.0);
         let tools = [
@@ -439,7 +435,7 @@ impl Cikung {
 }
 
 /// Collapsed-notch lyric line: the old line lifts away as the new one rises in.
-fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui::Response {
+pub(super) fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui::Response {
     let rect = ui.max_rect();
     let response = ui.allocate_rect(rect, Sense::click());
     let now = ui.input(|i| i.time);
@@ -465,12 +461,12 @@ fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui::Response 
         let mut job = egui::text::LayoutJob::simple_singleline(
             text.to_owned(),
             egui::FontId::proportional(12.5),
-            WHITE,
+            ink(),
         );
         job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width());
         let galley = painter.layout_job(job);
         let pos = Pos2::new(rect.left(), rect.center().y - galley.size().y / 2.0 + dy);
-        painter.galley_with_override_text_color(pos, galley, WHITE.gamma_multiply(alpha));
+        painter.galley_with_override_text_color(pos, galley, ink().gamma_multiply(alpha));
     };
     if progress < 1.0 && !previous.is_empty() {
         draw(&previous, -9.0 * progress, 1.0 - progress);
@@ -488,9 +484,9 @@ fn gear_button(ui: &mut egui::Ui) -> egui::Response {
     );
     let (c, painter) = (response.rect.center(), ui.painter());
     let color = if response.hovered() {
-        WHITE
+        ink()
     } else {
-        GRAY.lerp_to_gamma(WHITE, 0.4)
+        muted().lerp_to_gamma(ink(), 0.4)
     };
     for tooth in 0..8 {
         let direction = Vec2::angled(tooth as f32 * std::f32::consts::TAU / 8.0);
@@ -507,8 +503,8 @@ fn gear_button(ui: &mut egui::Ui) -> egui::Response {
 fn page_title(page: Option<Page>) -> (&'static str, &'static str, Color32) {
     let teal = Color32::from_rgb(80, 210, 200);
     match page {
-        None => ("All", "Tools", ORANGE),
-        Some(Page::Overview) => ("Cikung", "Home", ORANGE),
+        None => ("All", "Tools", accent()),
+        Some(Page::Overview) => ("Cikung", "Home", accent()),
         Some(Page::Music) => ("Now", "Playing", Color32::from_rgb(30, 215, 96)),
         Some(Page::Lyrics) => ("Synced", "Lyrics", Color32::from_rgb(110, 165, 255)),
         Some(Page::Focus) => ("Focus", "Timer", Color32::from_rgb(255, 105, 97)),
@@ -517,19 +513,19 @@ fn page_title(page: Option<Page>) -> (&'static str, &'static str, Color32) {
         Some(Page::Tasks) => ("Todo", "List", Color32::from_rgb(70, 205, 120)),
         Some(Page::Notes) => ("Quick", "Notes", Color32::from_rgb(255, 204, 77)),
         Some(Page::Agents) => ("AI", "Agents", Color32::from_rgb(175, 135, 255)),
-        Some(Page::Chat) => ("Ask", "Cikung", ORANGE),
+        Some(Page::Chat) => ("Ask", "Cikung", accent()),
         Some(Page::Game) => ("Game", "Hints", Color32::from_rgb(255, 120, 190)),
         Some(Page::Services) => ("Connected", "Accounts", teal),
         Some(Page::Phone) => ("Phone", "Link", teal),
-        Some(Page::Style) => ("Cat", "Wardrobe", ORANGE),
-        Some(Page::Settings) => ("Cikung", "Settings", GRAY),
+        Some(Page::Style) => ("Cat", "Wardrobe", accent()),
+        Some(Page::Settings) => ("Cikung", "Settings", muted()),
     }
 }
 
 fn title_job((main, accent, color): (&str, &str, Color32)) -> egui::text::LayoutJob {
     let font = egui::FontId::proportional(13.0);
     let mut job = egui::text::LayoutJob::default();
-    job.append(main, 0.0, egui::TextFormat::simple(font.clone(), WHITE));
+    job.append(main, 0.0, egui::TextFormat::simple(font.clone(), ink()));
     job.append(accent, 4.0, egui::TextFormat::simple(font, color));
     job
 }
