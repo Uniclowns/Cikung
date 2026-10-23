@@ -16,7 +16,7 @@ This integration is currently Windows-only. Oh My Pi keeps its terminal adapter.
 
 Primary OS reference: https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-uiautomationoverview
 
-The UI embeds Plus Jakarta Sans from Google Fonts under SIL OFL 1.1. The packaged license is licenses/OFL-PlusJakartaSans.txt. Battery percentage and Pin are removed; hover grace, click-to-toggle and interaction holds remain.
+The UI embeds Figtree Bold under SIL OFL 1.1, a free lookalike of Spotify's interface font. The packaged license is licenses/OFL-Figtree.txt. Battery percentage and Pin are removed; hover grace, click-to-toggle and interaction holds remain.
 
 ## Local validation evidence
 

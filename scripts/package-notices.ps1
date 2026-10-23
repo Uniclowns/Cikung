@@ -7,8 +7,8 @@ New-Item -ItemType Directory -Path $destination -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'Cargo.lock') -Destination (Join-Path $OutputFolder 'Cargo.lock') -Force
 $lock = Get-Content -LiteralPath (Join-Path $ProjectRoot 'Cargo.lock') -Raw
 $packages = [regex]::Matches($lock, '(?m)^name = "([^"]+)"\r?\nversion = "([^"]+)"')
-Copy-Item -LiteralPath (Join-Path $ProjectRoot 'assets\fonts\OFL-PlusJakartaSans.txt') -Destination (Join-Path $OutputFolder 'licenses\OFL-PlusJakartaSans.txt') -Force
-$inventory = @('Dependency license inventory. Exact dependency versions: Cargo.lock.', 'Plus Jakarta Sans: SIL Open Font License 1.1 (licenses/OFL-PlusJakartaSans.txt).', '')
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'assets\fonts\OFL-Figtree.txt') -Destination (Join-Path $OutputFolder 'licenses\OFL-Figtree.txt') -Force
+$inventory = @('Dependency license inventory. Exact dependency versions: Cargo.lock.', 'Figtree: SIL Open Font License 1.1 (licenses/OFL-Figtree.txt).', '')
 foreach ($package in $packages) {
     $packageName = $package.Groups[1].Value
     $packageVersion = $package.Groups[2].Value

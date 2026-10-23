@@ -180,20 +180,32 @@ impl Cikung {
         );
     }
     pub(crate) fn files(&mut self, ui: &mut egui::Ui) {
-        heading(
-            ui,
-            "A pocket for your files",
-            "Drop files on the notch. Originals stay exactly where they are.",
-        );
-        if ui.button("Add files").clicked()
-            && let Some(paths) = rfd::FileDialog::new().pick_files()
-        {
-            for path in paths {
-                if let Err(e) = self.tools.add_file(path) {
-                    self.toast("Files", e);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Drag out anytime · click to open")
+                    .size(11.0)
+                    .color(GRAY),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !self.tools.shelf.is_empty()
+                    && ui
+                        .small_button("Clear")
+                        .on_hover_text("Empty the pocket. Your original files stay put.")
+                        .clicked()
+                {
+                    self.tools.shelf.clear();
                 }
-            }
-        }
+                if ui.small_button("Add files").clicked()
+                    && let Some(paths) = rfd::FileDialog::new().pick_files()
+                {
+                    for path in paths {
+                        if let Err(e) = self.tools.add_file(path) {
+                            self.toast("Files", e);
+                        }
+                    }
+                }
+            });
+        });
         ui.add_space(8.0);
         let drag = if self.prefs.reduced_motion {
             if self.file_hover.is_some() { 1.0 } else { 0.0 }
@@ -204,53 +216,158 @@ impl Cikung {
                 0.18,
             )
         };
-        egui::Frame::new()
-            .fill(Color32::from_rgb(
-                24 + (drag * 18.0) as u8,
-                23 + (drag * 9.0) as u8,
-                22,
-            ))
-            .stroke(egui::Stroke::new(1.0_f32, GRAY.lerp_to_gamma(ORANGE, drag)))
-            .corner_radius(12)
-            .inner_margin(14)
-            .show(ui, |ui| {
-                ui.set_width((ui.available_width() - 2.0).max(1.0));
-                ui.label(
-                    RichText::new(if self.file_hover.is_some() {
-                        "Release to keep files here"
-                    } else {
-                        "Drop files here to keep them close"
-                    })
-                    .color(WHITE),
-                );
-                ui.label(
-                    RichText::new("A temporary pocket. Your original files stay in place.")
-                        .size(11.0)
-                        .color(GRAY),
-                );
-            });
-        let mut remove = None;
-        for (index, item) in self.tools.shelf.clone().iter().enumerate() {
-            ui.add_space(5.0);
-            ui.horizontal(|ui| {
-                ui.add_sized([260.0, 24.0], egui::Label::new(&item.name).truncate())
-                    .on_hover_text(&item.path);
-                if ui.small_button("Open").clicked() {
-                    let result = self.tools.open_file(index);
-                    self.report(result, "Opened file.");
-                }
-                if ui.small_button("Show").clicked() {
-                    let result = self.tools.reveal_file(index);
-                    self.report(result, "Opened its folder.");
-                }
-                if ui.small_button("Remove").clicked() {
-                    remove = Some(index);
-                }
-            });
+        // Like Nusa: the drop zone fills an empty pocket and lights up over the cards on hover.
+        if self.tools.shelf.is_empty() || drag > 0.0 {
+            egui::Frame::new()
+                .fill(Color32::from_rgb(
+                    24 + (drag * 18.0) as u8,
+                    23 + (drag * 9.0) as u8,
+                    22,
+                ))
+                .stroke(egui::Stroke::new(1.0_f32, GRAY.lerp_to_gamma(ORANGE, drag)))
+                .corner_radius(12)
+                .inner_margin(14)
+                .show(ui, |ui| {
+                    ui.set_width((ui.available_width() - 2.0).max(1.0));
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            RichText::new(if self.file_hover.is_some() {
+                                "Release to keep files here"
+                            } else {
+                                "Drop files here"
+                            })
+                            .color(WHITE),
+                        );
+                        ui.label(
+                            RichText::new("Originals stay exactly where they are.")
+                                .size(11.0)
+                                .color(GRAY),
+                        );
+                    });
+                });
+            ui.add_space(8.0);
         }
-        if let Some(index) = remove {
-            self.tools.remove_file(index);
+        let now = ui.input(|i| i.time);
+        let mut action = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(4.0, 6.0);
+            for (index, item) in self.tools.shelf.clone().iter().enumerate() {
+                if let Some(chosen) = self.shelf_card(ui, index, item, now) {
+                    action = Some(chosen);
+                }
+            }
+        });
+        match action {
+            Some(ShelfAction::Open(index)) => {
+                let result = self.tools.open_file(index);
+                self.report(result, "Opened file.");
+            }
+            Some(ShelfAction::Reveal(index)) => {
+                let result = self.tools.reveal_file(index);
+                self.report(result, "Opened its folder.");
+            }
+            Some(ShelfAction::Remove(index)) => self.tools.remove_file(index),
+            Some(ShelfAction::DragOut(index)) => {
+                let path = self.tools.shelf[index].path.clone();
+                let result = if std::path::Path::new(&path).exists() {
+                    crate::native::drag_file_out(self.handle, &path)
+                } else {
+                    Err("This file was moved or deleted.".into())
+                };
+                if let Err(error) = result {
+                    self.toast("Files", error);
+                }
+            }
+            None => {}
         }
+    }
+
+    /// One Nusa-style pocket card: Explorer icon or thumbnail, name, then size or "Folder".
+    fn shelf_card(
+        &self,
+        ui: &mut egui::Ui,
+        index: usize,
+        item: &crate::tools::ShelfItem,
+        now: f64,
+    ) -> Option<ShelfAction> {
+        let card = shelf_entry(ui.ctx(), item, now);
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(68.0, 90.0), egui::Sense::click_and_drag());
+        // New files drop in with Nusa's springy fall.
+        let t = if self.prefs.reduced_motion {
+            1.0
+        } else {
+            ((now - card.appeared) / 0.6).clamp(0.0, 1.0) as f32
+        };
+        if t < 1.0 {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(8));
+        }
+        let rect = rect.translate(Vec2::new(
+            0.0,
+            -18.0 * (1.0 - egui::emath::easing::back_out(t)),
+        ));
+        let alpha = (t * 3.0).min(1.0);
+        let painter = ui.painter();
+        if response.hovered() || response.dragged() {
+            painter.rect_filled(rect, 10, Color32::from_white_alpha(14));
+        }
+        let thumb = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, rect.top() + 28.0),
+            Vec2::splat(44.0),
+        );
+        if let Some(icon) = &card.icon {
+            // Keep the shell image's aspect ratio inside the 44 px square.
+            let size = icon.size_vec2();
+            let fit = thumb.size() / size.max_elem();
+            egui::Image::new((icon.id(), size * fit))
+                .corner_radius(9)
+                .tint(Color32::WHITE.gamma_multiply(alpha))
+                .paint_at(ui, egui::Rect::from_center_size(thumb.center(), size * fit));
+        } else {
+            painter.rect_filled(
+                thumb.shrink(4.0),
+                8,
+                Color32::from_gray(52).gamma_multiply(alpha),
+            );
+        }
+        let line = |text: &str, y: f32, size: f32, color: Color32| {
+            let mut job = egui::text::LayoutJob::simple_singleline(
+                text.to_owned(),
+                egui::FontId::proportional(size),
+                color.gamma_multiply(alpha),
+            );
+            job.wrap = egui::text::TextWrapping::truncate_at_width(64.0);
+            let galley = painter.layout_job(job);
+            painter.galley(
+                egui::pos2(rect.center().x - galley.size().x / 2.0, y),
+                galley,
+                color,
+            );
+        };
+        line(&item.name, rect.top() + 56.0, 11.0, WHITE);
+        line(&card.detail, rect.top() + 72.0, 10.0, GRAY);
+        let mut action = None;
+        response.context_menu(|ui| {
+            if ui.button("Open").clicked() {
+                action = Some(ShelfAction::Open(index));
+                ui.close();
+            }
+            if ui.button("Show in folder").clicked() {
+                action = Some(ShelfAction::Reveal(index));
+                ui.close();
+            }
+            if ui.button("Remove from pocket").clicked() {
+                action = Some(ShelfAction::Remove(index));
+                ui.close();
+            }
+        });
+        if response.drag_started() {
+            action = Some(ShelfAction::DragOut(index));
+        } else if response.on_hover_text(&item.path).clicked() {
+            action = Some(ShelfAction::Open(index));
+        }
+        action
     }
     pub(crate) fn tasks(&mut self, ui: &mut egui::Ui) {
         heading(
@@ -951,5 +1068,64 @@ mod reminder_tests {
         assert!(parse_task_due("1960-01-01 12:00").is_err());
         let due = parse_task_due("2026-10-20 18:30").unwrap().unwrap();
         assert_eq!(format_task_due(due), "2026-10-20 18:30");
+    }
+}
+
+enum ShelfAction {
+    Open(usize),
+    Reveal(usize),
+    Remove(usize),
+    DragOut(usize),
+}
+
+#[derive(Clone)]
+struct ShelfCard {
+    icon: Option<egui::TextureHandle>,
+    detail: String,
+    appeared: f64,
+}
+
+/// Per-file icon and size, loaded once per run and kept in egui's temp memory.
+fn shelf_entry(ctx: &egui::Context, item: &crate::tools::ShelfItem, now: f64) -> ShelfCard {
+    let id = egui::Id::new(("shelf-card", &item.path));
+    if let Some(card) = ctx.data(|data| data.get_temp::<ShelfCard>(id)) {
+        return card;
+    }
+    let detail = match std::fs::metadata(&item.path) {
+        Ok(meta) if meta.is_dir() => "Folder".to_owned(),
+        Ok(meta) => human_size(meta.len()),
+        Err(_) => "Missing".to_owned(),
+    };
+    let icon = crate::native::shell_icon(&item.path, 96).map(|(size, rgba)| {
+        ctx.load_texture(
+            format!("shelf {}", item.path),
+            egui::ColorImage::from_rgba_unmultiplied(size, &rgba),
+            egui::TextureOptions::LINEAR,
+        )
+    });
+    // Only files added moments ago fall in; a restart does not replay the animation.
+    let added_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .is_ok_and(|age| age.as_secs().saturating_sub(item.added_unix) <= 2);
+    let card = ShelfCard {
+        icon,
+        detail,
+        appeared: if added_now { now } else { f64::MIN },
+    };
+    ctx.data_mut(|data| data.insert_temp(id, card.clone()));
+    card
+}
+
+fn human_size(bytes: u64) -> String {
+    let units = ["KB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = None;
+    while value >= 1024.0 && unit.is_none_or(|u| u + 1 < units.len()) {
+        value /= 1024.0;
+        unit = Some(unit.map_or(0, |u| u + 1));
+    }
+    match unit {
+        None => format!("{bytes} B"),
+        Some(unit) => format!("{value:.1} {}", units[unit]),
     }
 }

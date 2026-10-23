@@ -59,10 +59,20 @@ pub(crate) enum Page {
     Settings,
 }
 impl Page {
-    pub const PRIMARY: [Self; 4] = [Self::Overview, Self::Music, Self::Agents, Self::Focus];
+    /// Pages the ‹ › arrows and dots cycle through, like Nusa's one-tool-per-page notch.
+    pub const CAROUSEL: [Self; 8] = [
+        Self::Overview,
+        Self::Music,
+        Self::Focus,
+        Self::Water,
+        Self::Files,
+        Self::Tasks,
+        Self::Notes,
+        Self::Agents,
+    ];
     pub fn height(self) -> f32 {
         match self {
-            Self::Music => 270.0,
+            Self::Music => 240.0,
             Self::Focus | Self::Files | Self::Tasks | Self::Water => 380.0,
             Self::Style => 460.0,
             Self::Overview => 460.0,
@@ -277,6 +287,8 @@ pub struct Cikung {
     pub(crate) autostart: bool,
     pub(crate) vlc_password: String,
     pub(crate) artwork: Option<(String, egui::TextureHandle)>,
+    /// Cover colour the notch fades into while music is shown; black without a cover.
+    pub(crate) tint: Color32,
     pub(crate) page: Page,
     pub(crate) expanded: bool,
     pub(crate) demo: bool,
@@ -286,11 +298,12 @@ pub struct Cikung {
     content_motion: notch::ContentTransition,
     pub(crate) file_hover: Option<(Page, bool, bool)>,
     more_open: bool,
-    music_options_open: bool,
     last_shape: Option<[i32; 5]>,
+    /// When idle memory was last handed back during the current collapsed rest.
+    last_trim: Option<f64>,
     last_anchor: Instant,
     fullscreen: bool,
-    handle: Option<usize>,
+    pub(crate) handle: Option<usize>,
     pub(crate) shortcut: Option<native::GlobalShortcut>,
     pub(crate) notices: VecDeque<Notice>,
     pub(crate) chat: Vec<ChatMessage>,
@@ -374,19 +387,17 @@ impl Cikung {
         style.spacing.item_spacing = Vec2::new(8.0, 7.0);
         style.spacing.button_padding = Vec2::new(10.0, 6.0);
         cc.egui_ctx.set_style(style);
+        // Figtree Bold everywhere: free (OFL) lookalike of Spotify's proprietary Spotify Mix.
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(
-            "Plus Jakarta Sans".into(),
-            egui::FontData::from_static(include_bytes!(
-                "../assets/fonts/PlusJakartaSans-Variable.ttf"
-            ))
-            .into(),
+            "Figtree Bold".into(),
+            egui::FontData::from_static(include_bytes!("../assets/fonts/Figtree-Bold.ttf")).into(),
         );
         fonts
             .families
             .entry(egui::FontFamily::Proportional)
             .or_default()
-            .insert(0, "Plus Jakarta Sans".into());
+            .insert(0, "Figtree Bold".into());
         cc.egui_ctx.set_fonts(fonts);
         let snapshot = Snapshot {
             sessions: if launch.demo {
@@ -519,12 +530,13 @@ impl Cikung {
             },
             vlc_password: String::new(),
             artwork: None,
+            tint: Color32::BLACK,
             page,
             expanded,
             demo: launch.demo,
             started: Instant::now(),
             motion: Motion::new(if expanded {
-                Vec2::new(notch::HOST.x, page.height())
+                Vec2::new(notch::OPEN_WIDTH, page.height())
             } else {
                 collapsed
             }),
@@ -532,8 +544,8 @@ impl Cikung {
             content_motion: notch::ContentTransition::default(),
             file_hover: None,
             more_open: launch.page.as_deref() == Some("more"),
-            music_options_open: false,
             last_shape: None,
+            last_trim: None,
             last_anchor: Instant::now() - Duration::from_secs(2),
             fullscreen: false,
             handle: native::window_handle(cc),
@@ -1205,7 +1217,7 @@ impl Cikung {
             completed.dedup();
             self.toast("AI finished", format!("{} finished", completed.join(" · ")));
             if self.prefs.agent_completion_sound
-                && cfg!(windows)
+                && cfg!(any(windows, target_os = "macos"))
                 && let Err(error) = self
                     .completion_player
                     .play(Instant::now(), self.prefs.agent_completion_volume)
@@ -1327,6 +1339,7 @@ impl eframe::App for Cikung {
             self.fullscreen = fullscreen;
         }
         self.tick(ctx);
+        self.sync_artwork(ctx);
         let now = self.started.elapsed().as_secs_f64();
         let scale = ctx.pixels_per_point();
         let host_width = if cfg!(target_os = "windows") {
@@ -1363,15 +1376,15 @@ impl eframe::App for Cikung {
         );
         self.follow_music_on_open(previously_expanded);
         let page_height = if self.more_open {
-            390.0
-        } else if self.page == Page::Music && self.music_options_open {
             420.0
         } else {
             self.page.height()
         };
         let size = self.motion.retarget(
             if self.expanded {
-                Vec2::new(notch::HOST.x, page_height)
+                Vec2::new(notch::OPEN_WIDTH, page_height)
+            } else if !self.demo && self.current_lyric().is_some() {
+                notch::COLLAPSED_LYRIC
             } else {
                 notch::COLLAPSED
             },
@@ -1412,19 +1425,26 @@ impl eframe::App for Cikung {
         let center = host_width / 2.0;
         let surface = notch::aligned_surface_rect(center * 2.0, size, scale);
         let radius = 15.0 + openness * 7.0;
+        // Music keeps its cover tint; other open pages fade back to plain black.
+        let tint = if self.expanded && (self.page != Page::Music || self.more_open) {
+            Color32::BLACK
+        } else {
+            self.tint
+        };
+        let fade = if self.prefs.reduced_motion { 0.0 } else { 0.6 };
+        let [r, g, b] = [
+            ("tint-r", tint.r()),
+            ("tint-g", tint.g()),
+            ("tint-b", tint.b()),
+        ]
+        .map(|(id, v)| {
+            ctx.animate_value_with_time(egui::Id::new(id), f32::from(v), fade)
+                .round() as u8
+        });
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(
-                    surface,
-                    egui::CornerRadius {
-                        nw: 0,
-                        ne: 0,
-                        sw: radius.round() as u8,
-                        se: radius.round() as u8,
-                    },
-                    Color32::BLACK,
-                );
+                notch::paint_surface(ui.painter(), surface, radius, Color32::from_rgb(r, g, b));
                 let header_rect = Rect::from_min_size(
                     surface.min + Vec2::new(14.0, 2.0),
                     Vec2::new((size.x - 28.0).max(1.0), 36.0),
@@ -1458,10 +1478,11 @@ impl eframe::App for Cikung {
                         .paint_previous(ui.painter(), clip, opacity, &progress);
                     let body_rect = Rect::from_min_size(
                         Pos2::new(
-                            (host_width - notch::HOST.x) / 2.0 + 18.0 + progress.offset,
+                            // 26 px sides leave room for the carousel arrows.
+                            (host_width - notch::OPEN_WIDTH) / 2.0 + 26.0 + progress.offset,
                             50.0 + 6.0 * (1.0 - openness),
                         ),
-                        Vec2::new(notch::HOST.x - 36.0, page_height - 62.0),
+                        Vec2::new(notch::OPEN_WIDTH - 52.0, page_height - 62.0),
                     );
                     let mut body = ui.new_child(
                         egui::UiBuilder::new()
@@ -1484,6 +1505,7 @@ impl eframe::App for Cikung {
                         start,
                         self.artwork.as_ref().map(|(_, texture)| texture.clone()),
                     );
+                    self.carousel_arrows(ui, surface, opacity);
                 }
             });
         if inside && ctx.input(|i| i.pointer.any_click()) {
@@ -1541,6 +1563,16 @@ impl eframe::App for Cikung {
                 storage.flush();
             }
         }
+        // While the notch rests collapsed, hand idle memory back right away and every 10 s,
+        // and let the desktop-app watcher poll less often.
+        let resting = !self.expanded && !self.motion.moving(now);
+        self.desktop_manager.set_resting(resting);
+        if !resting {
+            self.last_trim = None;
+        } else if now > 3.0 && self.last_trim.is_none_or(|at| now - at >= 10.0) {
+            native::trim_memory();
+            self.last_trim = Some(now);
+        }
         if self.motion.moving(now) {
             ctx.request_repaint_after(Duration::from_millis(8));
         } else {
@@ -1553,9 +1585,14 @@ impl eframe::App for Cikung {
                         .as_ref()
                         .is_some_and(|s| s.state == PlaybackState::Playing)
                 {
-                    33
-                } else {
+                    // Collapsed, only the tiny EQ bars move: 15 fps keeps memory and CPU low.
+                    if self.expanded { 33 } else { 66 }
+                } else if self.expanded {
                     100
+                } else {
+                    // Resting notch: mouse entry wakes it instantly; timers and the
+                    // fullscreen check only need about one frame a second.
+                    1000
                 },
             ));
         }
@@ -1570,7 +1607,7 @@ impl eframe::App for Cikung {
 
 pub(crate) fn heading(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.add_space(9.0);
-    ui.label(RichText::new(title).size(18.0).strong());
+    ui.label(RichText::new(title).size(18.0).color(WHITE));
     if !subtitle.is_empty() {
         ui.label(RichText::new(subtitle).size(12.0).color(GRAY));
     }
@@ -1752,7 +1789,7 @@ mod tests {
         use eframe::App;
         let (ctx, mut app) = app();
         app.page = Page::Files;
-        app.motion = Motion::new(Vec2::new(notch::HOST.x, Page::Files.height()));
+        app.motion = Motion::new(Vec2::new(notch::OPEN_WIDTH, Page::Files.height()));
         let mut frame = eframe::Frame::_new_kittest();
         fn render(
             ctx: &egui::Context,
@@ -2093,7 +2130,7 @@ mod tests {
         }
     }
     #[test]
-    fn music_options_remain_visible_in_the_compact_panel() {
+    fn music_time_row_remains_visible_in_the_compact_panel() {
         let (ctx, mut app) = app();
         app.page = Page::Music;
         app.tools.lyrics =
@@ -2103,16 +2140,18 @@ mod tests {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, notch::HOST)),
             ..Default::default()
         };
-        let surface =
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(notch::HOST.x, Page::Music.height()));
+        let surface = Rect::from_min_size(
+            Pos2::ZERO,
+            Vec2::new(notch::OPEN_WIDTH, Page::Music.height()),
+        );
         let output = ctx.run(input, |ctx| {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     let mut body =
                         ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(
-                            Pos2::new(18.0, 50.0),
-                            Vec2::new(notch::HOST.x - 36.0, Page::Music.height() - 62.0),
+                            Pos2::new(26.0, 50.0),
+                            Vec2::new(notch::OPEN_WIDTH - 52.0, Page::Music.height() - 62.0),
                         )));
                     body.set_clip_rect(surface);
                     app.content(&mut body);
@@ -2125,30 +2164,31 @@ mod tests {
                         locate(shape, clip, found);
                     }
                 }
-                egui::Shape::Text(text) if text.galley.job.text == "Playback options" => {
+                // The remaining-time label ("−m:ss") sits on the inline progress row.
+                egui::Shape::Text(text) if text.galley.job.text.starts_with('−') => {
                     found.push((Rect::from_min_size(text.pos, text.galley.size()), clip));
                 }
                 _ => {}
             }
         }
         let mut found = Vec::new();
-        for clipped in output.shapes {
+        for clipped in &output.shapes {
             locate(&clipped.shape, clipped.clip_rect, &mut found);
         }
-        assert_eq!(
-            found.len(),
-            1,
-            "Playback options must be reachable without scrolling"
-        );
+        assert_eq!(found.len(), 1, "The time row must be visible");
         assert!(
             found[0].1.contains_rect(found[0].0),
-            "Playback options were clipped: {:?}",
+            "The time row was clipped: {:?}",
             found[0]
         );
         assert!(
             found[0].0.bottom() < surface.bottom() - 15.0,
-            "Options overlap the footer: {:?}",
+            "The time row overlaps the bottom edge: {:?}",
             found[0]
+        );
+        assert!(
+            !format!("{:?}", output.shapes).contains("Playback options"),
+            "Playback options now live in Settings"
         );
     }
 }

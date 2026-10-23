@@ -136,12 +136,16 @@ fn main() -> eframe::Result {
                 notch::COLLAPSED
             })
             .with_icon(
-                eframe::icon_data::from_png_bytes(include_bytes!("../assets/cikung-face.png"))
-                    .expect("cat icon"),
+                eframe::icon_data::from_png_bytes(include_bytes!(
+                    "../assets/embed/cikung-face.png"
+                ))
+                .expect("cat icon"),
             )
             .with_decorations(false)
             .with_transparent(true)
             .with_resizable(false)
+            // Lives in the notch and the tray only, never as a taskbar button.
+            .with_taskbar(false)
             .with_always_on_top(),
         persist_window: false,
         // DWM composes the transparent host. Avoid a second blocking GL vsync wait;

@@ -41,12 +41,12 @@ impl Breed {
     }
     pub fn bytes(self) -> &'static [u8] {
         match self {
-            Self::Orange => include_bytes!("../assets/cikung-face.png"),
-            Self::Tuxedo => include_bytes!("../assets/cats/tuxedo.png"),
-            Self::Calico => include_bytes!("../assets/cats/calico.png"),
-            Self::Siamese => include_bytes!("../assets/cats/siamese.png"),
-            Self::Silver => include_bytes!("../assets/cats/silver.png"),
-            Self::White => include_bytes!("../assets/cats/white.png"),
+            Self::Orange => include_bytes!("../assets/embed/cikung-face.png"),
+            Self::Tuxedo => include_bytes!("../assets/embed/tuxedo.png"),
+            Self::Calico => include_bytes!("../assets/embed/calico.png"),
+            Self::Siamese => include_bytes!("../assets/embed/siamese.png"),
+            Self::Silver => include_bytes!("../assets/embed/silver.png"),
+            Self::White => include_bytes!("../assets/embed/white.png"),
         }
     }
 }

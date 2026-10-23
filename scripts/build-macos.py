@@ -27,6 +27,8 @@ def info():
         "CFBundleName": "Cikung", "CFBundleDisplayName": "Cikung",
         "CFBundleIdentifier": "com.cikung.desktop", "CFBundleExecutable": "cikung",
         "CFBundleIconFile": "Cikung.icns", "CFBundlePackageType": "APPL",
+        # Notch + right-click menu only, no Dock icon (matches Windows hiding from the taskbar).
+        "LSUIElement": True,
         "CFBundleInfoDictionaryVersion": "6.0", "CFBundleDevelopmentRegion": "en",
         "CFBundleShortVersionString": version(), "CFBundleVersion": version(),
         "LSMinimumSystemVersion": "11.0", "NSHighResolutionCapable": True,
@@ -56,7 +58,7 @@ def validate():
         length, start = struct.unpack_from("<II", ico, 6 + index * 16 + 8)
         assert length > 0 and start >= 6 + count * 16 and start + length <= len(ico)
     data = plistlib.loads(plistlib.dumps(info()))
-    assert data["CFBundleIconFile"] == "Cikung.icns" and "LSUIElement" not in data
+    assert data["CFBundleIconFile"] == "Cikung.icns" and data.get("LSUIElement") is True
     assert data["NSAppleEventsUsageDescription"] and data["CFBundleVersion"] == version()
     for file in ("Cargo.lock", "LICENSE", "README.md", "docs/macos.md", "Build-Cikung.command"):
         assert (ROOT / file).is_file(), file
@@ -92,7 +94,7 @@ def run(*args, env=None):
 
 def licenses(destination):
     destination.mkdir()
-    shutil.copy2(ROOT / "assets/fonts/OFL-PlusJakartaSans.txt", destination)
+    shutil.copy2(ROOT / "assets/fonts/OFL-Figtree.txt", destination)
     rust_docs = Path(run("rustc", "--print", "sysroot").strip()) / "share/doc/rust"
     shutil.copy2(rust_docs / "COPYRIGHT.html", destination / "Rust-runtime-COPYRIGHT.html")
     for path in (rust_docs / "licenses").glob("*.txt"):
