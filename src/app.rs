@@ -301,6 +301,8 @@ pub struct Cikung {
     last_shape: Option<[i32; 5]>,
     /// When idle memory was last handed back during the current collapsed rest.
     last_trim: Option<f64>,
+    /// Mac camera notch (width, height): Cikung wraps around it instead of covering it.
+    pub(crate) camera_notch: Option<(f32, f32)>,
     last_anchor: Instant,
     fullscreen: bool,
     pub(crate) handle: Option<usize>,
@@ -546,6 +548,7 @@ impl Cikung {
             more_open: launch.page.as_deref() == Some("more"),
             last_shape: None,
             last_trim: None,
+            camera_notch: native::camera_notch(),
             last_anchor: Instant::now() - Duration::from_secs(2),
             fullscreen: false,
             handle: native::window_handle(cc),
@@ -1383,6 +1386,9 @@ impl eframe::App for Cikung {
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
+            } else if let Some((camera, height)) = self.camera_notch {
+                // Hug the camera like a live activity: cat on the left wing, music bars right.
+                Vec2::new(camera + 2.0 * 46.0, height)
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
             } else {
@@ -1397,7 +1403,10 @@ impl eframe::App for Cikung {
         } else {
             size
         };
-        #[cfg(not(target_os = "windows"))]
+        // macOS: AppKit places the window above the menu bar, on the camera notch.
+        #[cfg(target_os = "macos")]
+        native::place_on_top(self.handle, host_size.x, host_size.y);
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(host_size));
         if self.last_anchor.elapsed() > Duration::from_secs(1) {
             let _ = native::anchor(
@@ -1411,7 +1420,7 @@ impl eframe::App for Cikung {
             );
             self.last_anchor = Instant::now();
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         if let Some(size) = ctx.input(|i| i.viewport().monitor_size) {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::new(
                 (size.x - host_size.x) / 2.0,

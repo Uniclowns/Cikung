@@ -360,6 +360,70 @@ pub fn volume(command: i32) {
         }
     }
 }
+/// Camera notch of the main Mac display as (width, height) in points; `None` without one.
+#[cfg(target_os = "macos")]
+pub fn camera_notch() -> Option<(f32, f32)> {
+    use objc2::{runtime::NSObjectProtocol, sel};
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::MainThreadMarker;
+    let screen = NSScreen::mainScreen(MainThreadMarker::new()?)?;
+    // safeAreaInsets arrived in macOS 12; the bundle still starts on 11.
+    if !screen.respondsToSelector(sel!(safeAreaInsets)) {
+        return None;
+    }
+    unsafe {
+        let top = screen.safeAreaInsets().top;
+        let width = screen.frame().size.width
+            - screen.auxiliaryTopLeftArea().size.width
+            - screen.auxiliaryTopRightArea().size.width;
+        (top > 0.0 && width > 0.0).then_some((width as f32, top as f32))
+    }
+}
+#[cfg(not(target_os = "macos"))]
+pub fn camera_notch() -> Option<(f32, f32)> {
+    None
+}
+
+/// Pins the notch window to the top centre of its Mac display, above the menu bar
+/// (like other notch apps) and on every Space, so it merges with the camera notch.
+#[cfg(target_os = "macos")]
+pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
+    use objc2_app_kit::{NSMainMenuWindowLevel, NSScreen, NSView, NSWindowCollectionBehavior};
+    use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
+    let (Some(handle), Some(mtm)) = (handle, MainThreadMarker::new()) else {
+        return;
+    };
+    let view = unsafe { &*(handle as *const NSView) };
+    let Some(window) = view.window() else {
+        return;
+    };
+    let Some(screen) = window.screen().or_else(|| NSScreen::mainScreen(mtm)) else {
+        return;
+    };
+    let frame = screen.frame();
+    let (w, h) = (f64::from(width), f64::from(height));
+    window.setLevel(NSMainMenuWindowLevel + 3);
+    unsafe {
+        window.setCollectionBehavior(
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::Stationary
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::IgnoresCycle,
+        );
+    }
+    window.setHasShadow(false);
+    window.setFrame_display(
+        NSRect::new(
+            NSPoint::new(
+                frame.origin.x + (frame.size.width - w) / 2.0,
+                frame.origin.y + frame.size.height - h,
+            ),
+            NSSize::new(w, h),
+        ),
+        true,
+    );
+}
+
 /// Like Nusa: hand idle pages back to Windows while the notch rests. Task Manager's
 /// memory drops; pages fault back in only when touched again.
 #[cfg(target_os = "windows")]

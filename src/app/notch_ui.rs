@@ -30,6 +30,14 @@ impl Cikung {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 9.0;
             self.draw_cat(ui, 31.0);
+            let camera = self.camera_notch.map(|(gap, _)| gap);
+            if camera.is_some() && !show_actions {
+                // Collapsed under a Mac camera notch: cat left, music bars right, and
+                // nothing drawn behind the camera itself.
+                ui.add_space((width - 31.0 - 20.0 - 18.0).max(0.0));
+                self.eq_bars(ui);
+                return;
+            }
             let notice = self.notices.back().filter(|n| {
                 matches!(
                     n.title.as_str(),
@@ -85,12 +93,17 @@ impl Cikung {
                 .then(|| page_title((!self.more_open).then_some(self.page)));
             // Cat, clock, gear and × with their spacing.
             let reserved = if show_actions { 212.0 } else { 162.0 };
+            let title_width = match camera {
+                // The title stays left of the camera; clock and buttons go right of it.
+                Some(gap) => ((width - gap) / 2.0 - 31.0 - 18.0).max(20.0),
+                None => (width - reserved).max(20.0),
+            };
             let response = ui
                 .allocate_ui_with_layout(
-                    Vec2::new((width - reserved).max(20.0), 32.0),
+                    Vec2::new(title_width, 32.0),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        ui.set_min_size(Vec2::new((width - reserved).max(20.0), 32.0));
+                        ui.set_min_size(Vec2::new(title_width, 32.0));
                         if let Some(line) = &lyric {
                             lyric_ticker(ui, line, reduced)
                         } else if let Some(heading) = heading {
@@ -112,6 +125,9 @@ impl Cikung {
                 .on_hover_text(tooltip);
             if response.clicked() {
                 self.expanded = !self.expanded;
+            }
+            if let Some(gap) = camera {
+                ui.add_space(gap);
             }
             let (clock_rect, clock_response) =
                 ui.allocate_exact_size(Vec2::new(75.0, 32.0), Sense::click());
@@ -160,29 +176,33 @@ impl Cikung {
                     }
                 });
             } else {
-                let active = self
-                    .session
-                    .as_ref()
-                    .is_some_and(|s| s.state == PlaybackState::Playing);
-                let (r, _) = ui.allocate_exact_size(Vec2::new(20.0, 20.0), Sense::hover());
-                for i in 0..3 {
-                    let h = if active && !self.prefs.reduced_motion {
-                        5.0 + ((self.started.elapsed().as_secs_f32() * 4.0 + i as f32).sin() + 1.0)
-                            * 4.0
-                    } else {
-                        3.0
-                    };
-                    ui.painter().rect_filled(
-                        Rect::from_center_size(
-                            Pos2::new(r.left() + 3.0 + i as f32 * 6.0, r.center().y),
-                            Vec2::new(2.0, h),
-                        ),
-                        1,
-                        if active { ORANGE } else { GRAY },
-                    );
-                }
+                self.eq_bars(ui);
             }
         });
+    }
+
+    /// Three small bars that bounce while music plays.
+    fn eq_bars(&self, ui: &mut egui::Ui) {
+        let active = self
+            .session
+            .as_ref()
+            .is_some_and(|s| s.state == PlaybackState::Playing);
+        let (r, _) = ui.allocate_exact_size(Vec2::new(20.0, 20.0), Sense::hover());
+        for i in 0..3 {
+            let h = if active && !self.prefs.reduced_motion {
+                5.0 + ((self.started.elapsed().as_secs_f32() * 4.0 + i as f32).sin() + 1.0) * 4.0
+            } else {
+                3.0
+            };
+            ui.painter().rect_filled(
+                Rect::from_center_size(
+                    Pos2::new(r.left() + 3.0 + i as f32 * 6.0, r.center().y),
+                    Vec2::new(2.0, h),
+                ),
+                1,
+                if active { ORANGE } else { GRAY },
+            );
+        }
     }
 
     pub(super) fn content(&mut self, ui: &mut egui::Ui) {
