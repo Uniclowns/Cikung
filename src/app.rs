@@ -1815,15 +1815,16 @@ mod tests {
             }
             text
         }
-        assert!(render(&ctx, &mut app, &mut frame, 0.0).contains("A pocket for your files"));
+        let files = "Drag out anytime · click to open";
+        assert!(render(&ctx, &mut app, &mut frame, 0.0).contains(files));
         app.page = Page::Water;
         let first = render(&ctx, &mut app, &mut frame, 1.0);
-        assert!(first.contains("A pocket for your files"));
+        assert!(first.contains(files));
         let middle = render(&ctx, &mut app, &mut frame, 1.12);
-        assert!(!middle.contains("A pocket for your files"));
+        assert!(!middle.contains(files));
         assert!(middle.contains("Water"));
         let last = render(&ctx, &mut app, &mut frame, 1.3);
-        assert!(!last.contains("A pocket for your files"));
+        assert!(!last.contains(files));
         assert!(last.contains("Water"));
         assert!(!app.motion.moving(1.3));
     }

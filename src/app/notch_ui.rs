@@ -83,7 +83,8 @@ impl Cikung {
             let heading = title
                 .is_empty()
                 .then(|| page_title((!self.more_open).then_some(self.page)));
-            let reserved = if show_actions { 180.0 } else { 162.0 };
+            // Cat, clock, gear and × with their spacing.
+            let reserved = if show_actions { 212.0 } else { 162.0 };
             let response = ui
                 .allocate_ui_with_layout(
                     Vec2::new((width - reserved).max(20.0), 32.0),
