@@ -1,8 +1,10 @@
-# Cikung 0.11.1
+# Cikung 0.12.0
 
 A small orange cat in a black notch, attached to the middle of your screen's top edge. Hover while music is playing to open a compact music player; leave to tuck it away. Written in Rust.
 
 **One app, one black top-center notch, many kinds of cat.** Six original cat breeds live inside Cikung: orange tabby, tuxedo, calico, siamese, silver shorthair and Snow. **Overview** shows the features with their cats; **Cats** lets you assign cats to features or choose one favorite for the whole app. Music, Focus, Claude, Oh My Pi and Codex can each show a different cat. Opening Cikung again focuses the existing window. [Cat and agent guide](docs/agent-companions.md).
+
+Version 0.12 restyles the notch after the native Nusa app: a springy open/close, a gradient tinted from the album cover, a live lyric ticker in the collapsed notch, a scrolling lyric list, flat playback controls and Figtree Bold. Tools are one page at a time with side arrows, a page indicator and a gear for Settings; playback options moved to Settings → Music. The file pocket shows real Explorer/Finder icons and files can be dragged back out. Claude App completion notices work with several prompt boxes open, the notch no longer shows a taskbar button, the exe is about 6.8 MB and resting memory is about 10 MB in Task Manager. Mac gains album covers, volume, the completion chime and the pocket's icons and drag-out. [Nusa findings](docs/nusa-reference.md), [Mac guide](docs/macos.md).
 
 Version 0.11.1 embeds the orange cat head in the Windows executable and prepares native Mac icon/bundle metadata, a universal Apple Silicon + Intel build script and artifact workflow. The Mac build kit contains source, not a compiled Mac app; native Mac validation remains pending. [Mac build guide](docs/macos.md).
 
