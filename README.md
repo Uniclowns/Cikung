@@ -1,8 +1,10 @@
-# Cikung 0.12.1
+# Cikung 0.13.0
 
 A small orange cat in a black notch, attached to the middle of your screen's top edge. Hover while music is playing to open a compact music player; leave to tuck it away. Written in Rust.
 
 **One app, one black top-center notch, many kinds of cat.** Six original cat breeds live inside Cikung: orange tabby, tuxedo, calico, siamese, silver shorthair and Snow. **Overview** shows the features with their cats; **Cats** lets you assign cats to features or choose one favorite for the whole app. Music, Focus, Claude, Oh My Pi and Codex can each show a different cat. Opening Cikung again focuses the existing window. [Cat and agent guide](docs/agent-companions.md).
+
+Version 0.13 adds Appearance themes in Settings → General: Album colour (black that follows the song's cover), Pure black, White and Orange. On a MacBook camera notch the collapsed notch shows the cat and song title left of the camera, the clock, date and music bars right of it, and the live lyric in a strip below the camera.
 
 Version 0.12.1 makes the Mac build sit on the MacBook camera notch, above the menu bar: collapsed, the cat and music bars sit on either side of the camera; open, the header splits around it. [Mac guide](docs/macos.md).
 
