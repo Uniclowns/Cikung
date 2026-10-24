@@ -37,6 +37,7 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 | Game | Manual-context AI hints for noncompetitive games, three spoiler levels, separate replies, and protected desktop-app draft handoff. |
 | WhatsApp notifications | Windows notification reader for WhatsApp and WhatsApp Desk, optional previews, permission/status and local test. |
 | Bluetooth | Windows Classic/LE connection notifications and connected device names; opt-out in General. |
+| System notices | Windows heads-ups in the notch, as in Nusa: charger connected or unplugged, low (20 %) and critical (10 %) battery, fully charged, internet connected, lost or without access, and Caps Lock on or off; opt-out in General. |
 | Music | System media detection, title/artist/covers, player selection, play/pause, previous/next, seek, shuffle and repeat when supported; Windows system volume. |
 | Lyrics | Automatic LRCLIB lookup, imported LRC/plain lyrics and click-to-seek synchronized lines on supported players. |
 | Focus | Focus/break timers, custom duration, pause/resume, session and focused-time counts. |

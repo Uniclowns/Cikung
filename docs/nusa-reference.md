@@ -61,3 +61,17 @@ Applied to Cikung, with its own cats, font and layout:
 - Reduced motion snaps the spring, tint, ticker and lyric flow.
 
 Not reproduced: Nusa's outer drop shadow, because Cikung's window region clips everything outside the surface. Bold lyric weight is also missing, because only the variable font's default instance is loaded. Validation: 129 Rust tests (spring overshoot/squash, cover tint), warnings-denied Clippy, rustfmt, and `--screenshot` renders of the Music page and the collapsed ticker using temporary sample cover/lyrics that were then removed. The live hover animation was not frame-captured, because Nusa occupies the same top-centre spot.
+
+## Nusa 1.0.0 → battery, internet and Caps Lock notices (2026-10-24)
+
+Target: the same installed `nusa.exe` (Nusa 1.0.0, 909,312 bytes, SHA-256 `2dfa517fe20fb944cd263597e9f731b8245fc2b5253d9f1a241221636e8d1bdb`). A reinstall on 2026-10-24 replaced only its uninstaller. REA `inspect_rust_binary` found no cargo-auditable dependency section (Evidence `ev_34578f676310c3e0e414d843858f3c4ccae89b4bf719f6c7623e7b072f1b8c73`). A read-only inventory of the file's text strings lists what Nusa shows its user. The file was not executed or decompiled.
+
+The inventory covers music and LRCLIB lyrics, Pomodoro (Focus Time, Short Break), water ("Stay hydrated!", "Time to Drink", "Time to Refill"), tasks ("Task Time!") and the file shelf ("Drop files here", "Drag out anytime", `shelf.txt`). Its tray offers "Start with Windows", "Nusa Mascot", "Minimal notch" and "About Nusa". Cikung already had all of these. Three groups were missing and are now added:
+
+| Nusa text | Cikung |
+| --- | --- |
+| Low battery · Plug in soon; Battery critical · Plug in now; Fully charged · You can unplug; Charger connected; Charging; Charger unplugged | Battery notices from `GetSystemPowerStatus`, checked every 3 s. They cover charger connected or unplugged (with the percentage), low battery at 20 %, critical at 10 % and fully charged. A PC without a battery stays quiet. |
+| Connected; No internet access; Disconnected | Internet notices from the WinRT internet connection profile (`NetworkInformation`), checked every 3 s. A change must hold for two checks, so a Wi-Fi handover stays quiet. |
+| Caps Lock · On / Off | The Caps Lock toggle from `GetKeyState`, checked every 150 ms and shown for 2 s. |
+
+The 20 % and 10 % thresholds, the wording and the timing are Cikung's own. The strings do not reveal Nusa's thresholds or polling, and these notices were not observed running, because that needs a charger, battery or network change. The state at startup is quiet. Settings → General → "Battery, internet and Caps Lock" turns them off. They are Windows only: the Mac build reads nothing yet. Cikung's cats and compact notch already cover "Nusa Mascot" and "Minimal notch", so nothing was added for those.

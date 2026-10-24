@@ -23,6 +23,7 @@ mod recording;
 #[cfg(target_os = "windows")]
 mod setup;
 mod shell;
+mod system_notices;
 mod tools;
 mod whatsapp;
 

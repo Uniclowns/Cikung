@@ -34,6 +34,9 @@ impl Cikung {
                 matches!(
                     n.title.as_str(),
                     "Bluetooth"
+                        | "Battery"
+                        | "Network"
+                        | "Caps Lock"
                         | "AI finished"
                         | "WhatsApp"
                         | "WhatsApp test"

@@ -279,6 +279,8 @@ pub(crate) struct Preferences {
     pub music_on_hover: bool,
     pub auto_lyrics: bool,
     pub bluetooth_notifications: bool,
+    /// Battery, internet and Caps Lock heads-ups in the notch.
+    pub system_notices: bool,
     pub whatsapp_notifications: bool,
     pub whatsapp_preview: bool,
     pub agent_completion_sound: bool,
@@ -316,6 +318,7 @@ impl Default for Preferences {
             music_on_hover: true,
             auto_lyrics: true,
             bluetooth_notifications: true,
+            system_notices: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,
             agent_completion_sound: true,
@@ -372,6 +375,7 @@ pub struct Cikung {
     pub(crate) tools: Toolkit,
     monitor: Option<Monitor>,
     bluetooth: Option<crate::bluetooth::Monitor>,
+    system: Option<crate::system_notices::Monitor>,
     whatsapp: Option<crate::whatsapp::Monitor>,
     notification_access: Option<std::sync::mpsc::Receiver<Result<crate::whatsapp::Access, String>>>,
     game: game::GameAssistant,
@@ -611,6 +615,7 @@ impl Cikung {
             tools,
             monitor,
             bluetooth: None,
+            system: None,
             whatsapp: None,
             notification_access: None,
             game: game::GameAssistant::default(),
@@ -702,10 +707,18 @@ impl Cikung {
         id
     }
     pub(crate) fn toast(&mut self, title: impl Into<String>, text: impl Into<String>) {
+        self.toast_for(title, text, Duration::from_secs(7));
+    }
+    pub(crate) fn toast_for(
+        &mut self,
+        title: impl Into<String>,
+        text: impl Into<String>,
+        shown: Duration,
+    ) {
         self.notices.push_back(Notice {
             title: title.into(),
             text: text.into(),
-            until: Instant::now() + Duration::from_secs(7),
+            until: Instant::now() + shown,
         });
         while self.notices.len() > 8 {
             self.notices.pop_front();
@@ -1023,6 +1036,22 @@ impl Cikung {
                 shell.notify("Bluetooth", &message);
             }
             self.toast("Bluetooth", message);
+        }
+        let system_enabled = self.prefs.system_notices
+            && cfg!(target_os = "windows")
+            && !self.demo
+            && self.capture.is_none()
+            && self.audit.is_none();
+        if system_enabled && self.system.is_none() {
+            self.system = Some(crate::system_notices::Monitor::start(ctx.clone()));
+        } else if !system_enabled {
+            self.system = None;
+        }
+        let notices = self.system.as_ref().map(|m| m.poll()).unwrap_or_default();
+        for notice in notices {
+            // Caps Lock answers a key press; battery and internet changes stay a little longer.
+            let seconds = if notice.title == "Caps Lock" { 2 } else { 6 };
+            self.toast_for(notice.title, notice.text, Duration::from_secs(seconds));
         }
         self.agent_manager.poll();
         self.desktop_manager
