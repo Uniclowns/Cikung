@@ -81,6 +81,9 @@ impl Cikung {
             // Cat, clock, gear and × with their spacing.
             let reserved = if show_actions { 212.0 } else { 162.0 };
             let title_width = (width - reserved).max(20.0);
+            // A lyric is laid out at the width the pill is growing to and clipped by its
+            // moving edge, so a longer line is revealed rather than re-cut every frame.
+            let lyric_cut = (self.motion.target().x - 28.0 - reserved).max(title_width);
             let response = ui
                 .allocate_ui_with_layout(
                     Vec2::new(title_width, 32.0),
@@ -88,7 +91,7 @@ impl Cikung {
                     |ui| {
                         ui.set_min_size(Vec2::new(title_width, 32.0));
                         if let Some(line) = &lyric {
-                            lyric_ticker(ui, line, reduced)
+                            lyric_ticker(ui, line, reduced, lyric_cut)
                         } else if let Some(heading) = heading {
                             ui.add(
                                 egui::Label::new(title_job(heading))
@@ -453,7 +456,13 @@ impl Cikung {
 }
 
 /// Collapsed-notch lyric line: the old line lifts away as the new one rises in.
-pub(super) fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui::Response {
+/// `width` is where a line is cut; the visible rect clips anything past it.
+pub(super) fn lyric_ticker(
+    ui: &mut egui::Ui,
+    line: &str,
+    reduced: bool,
+    width: f32,
+) -> egui::Response {
     let rect = ui.max_rect();
     let response = ui.allocate_rect(rect, Sense::click());
     let now = ui.input(|i| i.time);
@@ -481,7 +490,7 @@ pub(super) fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui
             egui::FontId::proportional(12.5),
             ink(),
         );
-        job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width());
+        job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(rect.width()));
         let galley = painter.layout_job(job);
         let pos = Pos2::new(rect.left(), rect.center().y - galley.size().y / 2.0 + dy);
         painter.galley_with_override_text_color(pos, galley, ink().gamma_multiply(alpha));
