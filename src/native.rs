@@ -424,6 +424,127 @@ pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
     );
 }
 
+/// What the Mac menu-bar icon asked for: 1 open the notch, 2 Settings, 3 quit.
+#[cfg(target_os = "macos")]
+static MENU_REQUEST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+#[cfg(target_os = "macos")]
+static MENU_CTX: std::sync::OnceLock<egui::Context> = std::sync::OnceLock::new();
+#[cfg(target_os = "macos")]
+fn menu_request(code: u8) {
+    MENU_REQUEST.store(code, std::sync::atomic::Ordering::Relaxed);
+    if let Some(ctx) = MENU_CTX.get() {
+        ctx.request_repaint();
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod mac_menu {
+    use objc2::{
+        ClassType, DeclaredClass, declare_class, msg_send_id, mutability,
+        rc::Retained,
+        runtime::{AnyObject, NSObjectProtocol},
+    };
+    use objc2_foundation::{MainThreadMarker, NSObject};
+
+    declare_class!(
+        pub struct MenuTarget;
+
+        unsafe impl ClassType for MenuTarget {
+            type Super = NSObject;
+            type Mutability = mutability::MainThreadOnly;
+            const NAME: &'static str = "CikungMenuTarget";
+        }
+
+        impl DeclaredClass for MenuTarget {}
+
+        unsafe impl MenuTarget {
+            #[method(openCikung:)]
+            fn open_cikung(&self, _sender: Option<&AnyObject>) {
+                super::menu_request(1);
+            }
+
+            #[method(openSettings:)]
+            fn open_settings(&self, _sender: Option<&AnyObject>) {
+                super::menu_request(2);
+            }
+
+            #[method(quitCikung:)]
+            fn quit_cikung(&self, _sender: Option<&AnyObject>) {
+                super::menu_request(3);
+            }
+        }
+
+        unsafe impl NSObjectProtocol for MenuTarget {}
+    );
+
+    impl MenuTarget {
+        pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
+            let this = mtm.alloc::<Self>().set_ivars(());
+            unsafe { msg_send_id![super(this), init] }
+        }
+    }
+}
+
+/// The cat in the Mac menu bar: Open Cikung, Settings… and Quit Cikung. Cikung has no
+/// Dock icon, so this is how it is found and closed.
+#[cfg(target_os = "macos")]
+pub fn install_menu_bar_item(ctx: &egui::Context) {
+    use objc2::{runtime::AnyObject, sel};
+    use objc2_app_kit::{NSImage, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength};
+    use objc2_foundation::{MainThreadMarker, NSData, NSSize, NSString};
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let _ = MENU_CTX.set(ctx.clone());
+    unsafe {
+        let item = NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength);
+        if let Some(button) = item.button(mtm) {
+            let data = NSData::with_bytes(include_bytes!("../assets/embed/cikung-face.png"));
+            if let Some(image) = NSImage::initWithData(mtm.alloc(), &data) {
+                image.setSize(NSSize::new(18.0, 18.0));
+                button.setImage(Some(&image));
+            }
+        }
+        let target = mac_menu::MenuTarget::new(mtm);
+        let target_object: &AnyObject = &target;
+        let menu = NSMenu::new(mtm);
+        let entries = [
+            ("Open Cikung", sel!(openCikung:), ""),
+            ("Settings…", sel!(openSettings:), ","),
+            ("Quit Cikung", sel!(quitCikung:), "q"),
+        ];
+        for (index, (title, action, key)) in entries.into_iter().enumerate() {
+            if index == 2 {
+                menu.addItem(&NSMenuItem::separatorItem(mtm));
+            }
+            let entry = NSMenuItem::initWithTitle_action_keyEquivalent(
+                mtm.alloc(),
+                &NSString::from_str(title),
+                Some(action),
+                &NSString::from_str(key),
+            );
+            entry.setTarget(Some(target_object));
+            menu.addItem(&entry);
+        }
+        item.setMenu(Some(&menu));
+        // ponytail: the status item and its target live for the whole run.
+        std::mem::forget(item);
+        std::mem::forget(target);
+    }
+}
+#[cfg(not(target_os = "macos"))]
+pub fn install_menu_bar_item(_ctx: &egui::Context) {}
+
+/// Takes the pending menu-bar request (0 when there is none).
+#[cfg(target_os = "macos")]
+pub fn take_menu_request() -> u8 {
+    MENU_REQUEST.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+#[cfg(not(target_os = "macos"))]
+pub fn take_menu_request() -> u8 {
+    0
+}
+
 /// Like Nusa: hand idle pages back to Windows while the notch rests. Task Manager's
 /// memory drops; pages fault back in only when touched again.
 #[cfg(target_os = "windows")]

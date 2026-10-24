@@ -68,47 +68,189 @@ fn startup_command(executable: &Path) -> Result<OsString, String> {
 pub fn autostart_enabled() -> bool {
     #[cfg(target_os = "windows")]
     {
-        registry_command(&["query", RUN_KEY, "/v", "Cikung"])
-            .is_ok_and(|result| result.status.success())
+        schtasks(&["/Query", "/TN", TASK]).is_ok_and(|result| result.status.success())
+            || registry_command(&["query", RUN_KEY, "/v", "Cikung"])
+                .is_ok_and(|result| result.status.success())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        launch_agent().is_some_and(|path| path.exists())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         false
     }
 }
 
+/// The first launch turns sign-in startup on. Later launches keep an enabled entry
+/// pointing at this copy of Cikung (and move a legacy Run entry to the logon task);
+/// a startup the user switched off stays off. Returns whether startup is on.
+pub fn ensure_autostart(first_launch: bool) -> bool {
+    let enabled = first_launch || autostart_enabled();
+    if enabled {
+        // ponytail: registering takes a schtasks call; off the UI thread so start-up stays quick.
+        std::thread::spawn(|| {
+            let _ = set_autostart(true);
+        });
+    }
+    enabled
+}
+
 pub fn set_autostart(enabled: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let output = if enabled {
+        if enabled {
             let executable =
                 std::env::current_exe().map_err(|e| format!("Could not locate Cikung: {e}"))?;
             let value = startup_command(&executable)?;
+            // A logon task starts right at sign-in; Run entries wait for Windows' startup delay.
+            if logon_task(&executable).is_ok() {
+                let _ = registry_command(&["delete", RUN_KEY, "/v", "Cikung", "/f"]);
+                return Ok(());
+            }
             use std::os::windows::process::CommandExt;
-            std::process::Command::new(registry_executable())
+            let output = std::process::Command::new(registry_executable())
                 .args(["add", RUN_KEY, "/v", "Cikung", "/t", "REG_SZ", "/d"])
                 .arg(value)
                 .arg("/f")
                 .creation_flags(0x08000000)
                 .output()
-                .map_err(|e| format!("Could not update your Cikung startup entry: {e}"))?
-        } else {
-            // Removing an already absent value is a successful disable.
-            if !autostart_enabled() {
-                return Ok(());
+                .map_err(|e| format!("Could not update your Cikung startup entry: {e}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err("Windows could not update your Cikung startup setting. No administrator access is needed; check your account's startup policy.".into())
             }
-            registry_command(&["delete", RUN_KEY, "/v", "Cikung", "/f"])?
-        };
-        if output.status.success() {
-            Ok(())
         } else {
-            Err("Windows could not update your Cikung startup setting. No administrator access is needed; check your account's startup policy.".into())
+            let _ = schtasks(&["/Delete", "/TN", TASK, "/F"]);
+            // Removing an already absent value is a successful disable.
+            if registry_command(&["query", RUN_KEY, "/v", "Cikung"])
+                .is_ok_and(|result| result.status.success())
+                && !registry_command(&["delete", RUN_KEY, "/v", "Cikung", "/f"])?
+                    .status
+                    .success()
+            {
+                return Err("Windows could not remove the Cikung startup entry.".into());
+            }
+            if autostart_enabled() {
+                Err("Windows could not remove the Cikung startup task.".into())
+            } else {
+                Ok(())
+            }
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let path = launch_agent().ok_or("Could not find your home folder.")?;
+        if !enabled {
+            return match std::fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    Err(format!("Could not remove the Cikung login item: {e}"))
+                }
+                _ => Ok(()),
+            };
+        }
+        let executable =
+            std::env::current_exe().map_err(|e| format!("Could not locate Cikung: {e}"))?;
+        let plist = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.cikung.desktop</string>
+    <key>ProgramArguments</key><array><string>{}</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>ProcessType</key><string>Interactive</string>
+</dict>
+</plist>
+"#,
+            xml_escape(&executable.to_string_lossy())
+        );
+        if let Some(folder) = path.parent() {
+            std::fs::create_dir_all(folder)
+                .map_err(|e| format!("Could not create your LaunchAgents folder: {e}"))?;
+        }
+        std::fs::write(&path, plist)
+            .map_err(|e| format!("Could not save the Cikung login item: {e}"))
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = enabled;
-        Err("Launch at login is currently supported on Windows only.".into())
+        Err("Launch at login is currently supported on Windows and macOS.".into())
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Per-user login item; launchd starts it at the next login.
+#[cfg(target_os = "macos")]
+fn launch_agent() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        std::path::PathBuf::from(home).join("Library/LaunchAgents/com.cikung.desktop.plist")
+    })
+}
+
+#[cfg(target_os = "windows")]
+const TASK: &str = "Cikung";
+#[cfg(target_os = "windows")]
+fn schtasks(args: &[&str]) -> Result<std::process::Output, String> {
+    use std::os::windows::process::CommandExt;
+    let program = registry_executable().with_file_name("schtasks.exe");
+    std::process::Command::new(program)
+        .args(args)
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| format!("Could not reach Task Scheduler: {e}"))
+}
+/// Logon task for just this user: no administrator rights, no startup delay, and normal
+/// priority (scheduled tasks otherwise run below normal).
+#[cfg(target_os = "windows")]
+fn logon_task(executable: &Path) -> Result<(), String> {
+    let (Ok(domain), Ok(name)) = (std::env::var("USERDOMAIN"), std::env::var("USERNAME")) else {
+        return Err("Your Windows account name is unavailable.".into());
+    };
+    let user = xml_escape(&format!("{domain}\\{name}"));
+    let command = xml_escape(&executable.to_string_lossy());
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Starts Cikung right after you sign in.</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{command}</Command></Exec></Actions>
+</Task>
+"#
+    );
+    let path = std::env::temp_dir().join(format!("cikung-logon-{}.xml", std::process::id()));
+    let mut bytes = vec![0xFF, 0xFE];
+    bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not prepare the logon task: {e}"))?;
+    let result = schtasks(&[
+        "/Create",
+        "/TN",
+        TASK,
+        "/XML",
+        &path.to_string_lossy(),
+        "/F",
+    ]);
+    let _ = std::fs::remove_file(&path);
+    match result {
+        Ok(output) if output.status.success() => Ok(()),
+        _ => Err("Task Scheduler did not accept the Cikung logon task.".into()),
     }
 }
 
