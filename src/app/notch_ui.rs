@@ -33,6 +33,12 @@ impl Cikung {
             // Mac camera notch: nothing is drawn behind the camera; the live lyric
             // hangs in a strip below it instead (see `update`).
             let camera = self.camera_notch.map(|(gap, _)| gap);
+            if camera.is_some() && !show_actions {
+                // Collapsed on a Mac camera notch: cat left of the camera, music bars right.
+                ui.add_space((width - 31.0 - 20.0 - 18.0).max(0.0));
+                self.eq_bars(ui);
+                return;
+            }
             let notice = self.notices.back().filter(|n| {
                 matches!(
                     n.title.as_str(),
@@ -175,6 +181,64 @@ impl Cikung {
                 self.eq_bars(ui);
             }
         });
+    }
+
+    /// Mac camera notch: the Windows pill's row (title or live lyric, clock and date)
+    /// as a strip under the camera.
+    pub(super) fn notch_strip(&mut self, ui: &mut egui::Ui) {
+        let (clock, date) = date_time(&chrono::Local::now());
+        let rect = ui.max_rect();
+        let clock_rect = Rect::from_min_max(Pos2::new(rect.right() - 70.0, rect.top()), rect.max);
+        let text_rect =
+            Rect::from_min_max(rect.min, Pos2::new(clock_rect.left() - 6.0, rect.bottom()));
+        let mut text = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(text_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        text.set_clip_rect(text_rect.intersect(ui.clip_rect()));
+        let lyric = (!self.demo)
+            .then(|| self.current_lyric().map(str::to_owned))
+            .flatten();
+        let response = if let Some(line) = lyric {
+            lyric_ticker(&mut text, &line, self.prefs.reduced_motion)
+        } else {
+            let title = self
+                .notices
+                .back()
+                .filter(|n| n.until > Instant::now())
+                .map(|n| n.text.clone())
+                .or_else(|| {
+                    self.session
+                        .as_ref()
+                        .map(|s| s.title.clone())
+                        .filter(|t| !t.is_empty())
+                })
+                .unwrap_or_else(|| "Cikung".into());
+            text.add(
+                egui::Label::new(RichText::new(title).size(12.0).color(ink()))
+                    .truncate()
+                    .sense(Sense::click()),
+            )
+        };
+        if response.clicked() {
+            self.expanded = !self.expanded;
+        }
+        let painter = ui.painter_at(clock_rect);
+        painter.text(
+            clock_rect.center_top(),
+            egui::Align2::CENTER_TOP,
+            clock,
+            egui::FontId::proportional(12.0),
+            ink(),
+        );
+        painter.text(
+            clock_rect.center_bottom(),
+            egui::Align2::CENTER_BOTTOM,
+            date,
+            egui::FontId::proportional(9.0),
+            muted(),
+        );
     }
 
     /// Three small bars that bounce while music plays.

@@ -50,6 +50,8 @@ try {
         New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
         Copy-Item -LiteralPath $exePath -Destination (Join-Path $outputFolder 'Cikung.exe') -Force
         & (Join-Path $PSScriptRoot 'set-app-icon.ps1') -Executable (Join-Path $outputFolder 'Cikung.exe')
+        # Setup is the same exe: "Setup" in its file name makes it install itself (src/setup.rs).
+        Copy-Item -LiteralPath (Join-Path $outputFolder 'Cikung.exe') -Destination (Join-Path $projectRoot 'dist\Cikung-Setup.exe') -Force
         if ($targetName) {
             $licenseFolder = Join-Path $outputFolder 'licenses'
             New-Item -ItemType Directory -Path $licenseFolder -Force | Out-Null
@@ -75,6 +77,6 @@ try {
         }
         & (Join-Path $projectRoot 'scripts\package-notices.ps1') -ProjectRoot $projectRoot -OutputFolder $outputFolder
         Compress-Archive -Path (Join-Path $outputFolder '*') -DestinationPath (Join-Path $projectRoot 'dist\Cikung-Windows-x64.zip') -Force
-        Write-Output "Ready: $outputFolder\Cikung.exe"
+        Write-Output "Ready: $outputFolder\Cikung.exe and $(Join-Path $projectRoot 'dist\Cikung-Setup.exe')"
     }
 } finally { Pop-Location }

@@ -288,6 +288,8 @@ pub(crate) struct Preferences {
     pub display: String,
     pub shortcut: String,
     pub companion_shortcut_initialized: bool,
+    /// Sign-in startup has been turned on once; switching it off afterwards is kept.
+    pub startup_initialized: bool,
     pub outfit: Outfit,
     pub chat: ChatConfig,
     pub services: Vec<ServiceConfig>,
@@ -323,6 +325,7 @@ impl Default for Preferences {
             display: String::new(),
             shortcut: "C".into(),
             companion_shortcut_initialized: false,
+            startup_initialized: false,
             outfit: Outfit::Auto,
             chat: ChatConfig::default(),
             services: Service::ALL
@@ -460,13 +463,17 @@ impl Cikung {
                 egui::TextureOptions::LINEAR,
             )
         });
-        let prefs = if launch.demo || launch.capture.is_some() || launch.audit.is_some() {
+        let mut prefs = if launch.demo || launch.capture.is_some() || launch.audit.is_some() {
             Preferences::default()
         } else {
             cc.storage
                 .and_then(|s| eframe::get_value(s, "cikung-v2-settings"))
                 .unwrap_or_default()
         };
+        let first_startup = !std::mem::replace(&mut prefs.startup_initialized, true);
+        if !(launch.demo || launch.capture.is_some() || launch.audit.is_some()) {
+            native::install_menu_bar_item(&cc.egui_ctx);
+        }
         let tools = if launch.demo || launch.capture.is_some() || launch.audit.is_some() {
             Toolkit::default()
         } else {
@@ -623,10 +630,10 @@ impl Cikung {
             } else {
                 crate::shell::Shell::start(cc.egui_ctx.clone()).ok()
             },
-            autostart: if launch.demo || launch.capture.is_some() {
+            autostart: if launch.demo || launch.capture.is_some() || launch.audit.is_some() {
                 false
             } else {
-                crate::shell::autostart_enabled()
+                crate::shell::ensure_autostart(first_startup)
             },
             vlc_password: String::new(),
             artwork: None,
@@ -1440,6 +1447,13 @@ impl eframe::App for Cikung {
             self.fullscreen = fullscreen;
         }
         self.tick(ctx);
+        // Mac menu-bar cat: Open Cikung, Settings… or Quit Cikung.
+        match native::take_menu_request() {
+            1 => self.expanded = true,
+            2 => self.navigate(Page::Settings),
+            3 => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            _ => {}
+        }
         self.sync_artwork(ctx);
         let now = self.started.elapsed().as_secs_f64();
         let scale = ctx.pixels_per_point();
@@ -1485,14 +1499,9 @@ impl eframe::App for Cikung {
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
             } else if let Some((camera, height)) = self.camera_notch {
-                // Wings either side of the camera: cat and title left, clock, date and
-                // music bars right. A live lyric adds a strip below the camera.
-                let strip = if !self.demo && self.current_lyric().is_some() {
-                    26.0
-                } else {
-                    0.0
-                };
-                Vec2::new(camera + 2.0 * 130.0, height + strip)
+                // About the Windows pill's width: the cat and music bars sit just beside
+                // the camera, and the pill's row (title or lyric, clock, date) hangs below it.
+                Vec2::new(camera + 2.0 * 48.0, height + 26.0)
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
             } else {
@@ -1581,11 +1590,9 @@ impl eframe::App for Cikung {
                 );
                 header.set_clip_rect(surface.intersect(ui.clip_rect()));
                 self.header(&mut header);
-                // Mac camera notch: the live lyric hangs in a strip just below the camera.
+                // Mac camera notch: the Windows pill's row hangs in a strip below the camera.
                 if let Some((_, notch_height)) = self.camera_notch
                     && openness < 0.65
-                    && !self.demo
-                    && let Some(line) = self.current_lyric().map(str::to_owned)
                 {
                     let strip = Rect::from_min_size(
                         surface.min + Vec2::new(14.0, notch_height),
@@ -1597,11 +1604,7 @@ impl eframe::App for Cikung {
                             .max_rect(strip),
                     );
                     child.set_clip_rect(surface.intersect(ui.clip_rect()));
-                    if notch_ui::lyric_ticker(&mut child, &line, self.prefs.reduced_motion)
-                        .clicked()
-                    {
-                        self.expanded = !self.expanded;
-                    }
+                    self.notch_strip(&mut child);
                 }
                 let reveal = ((openness - 0.3) / 0.7).clamp(0.0, 1.0);
                 let opacity = reveal * reveal * (3.0 - 2.0 * reveal);

@@ -25,4 +25,6 @@ jobs:
           path: |
             dist/Cikung-macOS-universal.zip
             dist/Cikung-macOS-universal.zip.sha256
+            dist/Cikung-macOS-universal.dmg
+            dist/Cikung-macOS-universal.dmg.sha256
           if-no-files-found: error
