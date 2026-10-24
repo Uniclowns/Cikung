@@ -257,7 +257,7 @@ fn logon_task(executable: &Path) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 const RUN_KEY: &str = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 #[cfg(target_os = "windows")]
-fn registry_executable() -> std::path::PathBuf {
+pub(crate) fn registry_executable() -> std::path::PathBuf {
     std::env::var_os("SystemRoot")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("C:\\Windows"))
@@ -265,7 +265,7 @@ fn registry_executable() -> std::path::PathBuf {
         .join("reg.exe")
 }
 #[cfg(target_os = "windows")]
-fn registry_command(args: &[&str]) -> Result<std::process::Output, String> {
+pub(crate) fn registry_command(args: &[&str]) -> Result<std::process::Output, String> {
     use std::os::windows::process::CommandExt;
     std::process::Command::new(registry_executable())
         .args(args)
