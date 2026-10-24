@@ -1501,7 +1501,10 @@ impl eframe::App for Cikung {
             } else if let Some((camera, _)) = self.camera_notch {
                 // The Windows row on the top edge, split around the camera: cat and title
                 // or lyric left of it, clock, date and music bars right of it.
-                Vec2::new(camera + 2.0 * notch::CAMERA_WING, notch::COLLAPSED.y)
+                Vec2::new(
+                    (camera + 2.0 * notch::CAMERA_WING).max(notch::COLLAPSED_LYRIC.x),
+                    notch::COLLAPSED.y,
+                )
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
             } else {

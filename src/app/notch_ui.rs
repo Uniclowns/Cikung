@@ -23,13 +23,11 @@ impl Cikung {
         let show_actions = openness > 0.65 && ui.available_width() > 410.0;
         let width = ui.available_width();
         let now = chrono::Local::now();
-        let (clock, date) = date_time(&now);
         ui.ctx().request_repaint_after(Duration::from_millis(
             60_000 - u64::from(now.second()) * 1000 - u64::from(now.nanosecond()) / 1_000_000,
         ));
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 9.0;
-            self.draw_cat(ui, 31.0);
             // Mac camera notch: the row splits around the camera, which has no pixels.
             let camera = self.camera_notch.map(|(gap, _)| gap);
             let notice = self.notices.back().filter(|n| {
@@ -81,6 +79,11 @@ impl Cikung {
                 .then(|| self.current_lyric().map(str::to_owned))
                 .flatten();
             let reduced = self.prefs.reduced_motion;
+            if let Some(gap) = camera.filter(|_| !show_actions) {
+                self.camera_row(ui, gap, &title, lyric.as_deref(), &tooltip);
+                return;
+            }
+            self.draw_cat(ui, 31.0);
             // Open with nothing more urgent to say: Nusa-style two-tone page title.
             let heading = title
                 .is_empty()
@@ -99,7 +102,7 @@ impl Cikung {
                     |ui| {
                         ui.set_min_size(Vec2::new(title_width, 32.0));
                         if let Some(line) = &lyric {
-                            lyric_ticker(ui, line, reduced, camera.is_some())
+                            lyric_ticker(ui, line, reduced, false)
                         } else if let Some(heading) = heading {
                             ui.add(
                                 egui::Label::new(title_job(heading))
@@ -123,31 +126,7 @@ impl Cikung {
             if let Some(gap) = camera {
                 ui.add_space(gap);
             }
-            let (clock_rect, clock_response) =
-                ui.allocate_exact_size(Vec2::new(75.0, 32.0), Sense::click());
-            ui.painter().text(
-                clock_rect.center_top() + Vec2::new(0.0, 1.0),
-                egui::Align2::CENTER_TOP,
-                clock,
-                egui::FontId::proportional(12.0),
-                ink(),
-            );
-            ui.painter().text(
-                clock_rect.center_bottom() - Vec2::new(0.0, 2.0),
-                egui::Align2::CENTER_BOTTOM,
-                date,
-                egui::FontId::proportional(9.0),
-                muted(),
-            );
-            if clock_response
-                .on_hover_text(format!(
-                    "{} · waktu lokal PC",
-                    now.format("%d/%m/%Y %H:%M %:z")
-                ))
-                .clicked()
-            {
-                self.expanded = !self.expanded;
-            }
+            self.clock(ui, 75.0);
             if show_actions {
                 ui.scope(|ui| {
                     ui.multiply_opacity(((openness - 0.65) / 0.35).clamp(0.0, 1.0));
@@ -173,6 +152,91 @@ impl Cikung {
                 self.eq_bars(ui);
             }
         });
+    }
+
+    /// Collapsed on a Mac camera notch at the Windows width: the cat and title or lyric left
+    /// of the camera, the clock, date and music bars right of it. The wings are narrow, so
+    /// the row also takes 6 pt of the side padding and draws a smaller cat.
+    fn camera_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        camera: f32,
+        title: &str,
+        lyric: Option<&str>,
+        tooltip: &str,
+    ) {
+        let row = ui.max_rect().expand2(Vec2::new(6.0, 0.0));
+        let center = row.center().x;
+        let wing = |left: f32, right: f32| {
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_min_max(
+                    Pos2::new(left, row.top()),
+                    Pos2::new(right, row.bottom()),
+                ))
+                .layout(egui::Layout::left_to_right(egui::Align::Center))
+        };
+        let reduced = self.prefs.reduced_motion;
+        let mut left = ui.new_child(wing(row.left(), center - camera / 2.0 - 5.0));
+        left.spacing_mut().item_spacing.x = 5.0;
+        self.draw_cat(&mut left, 26.0);
+        let text = Vec2::new(left.available_width().max(1.0), 32.0);
+        let response = left
+            .allocate_ui_with_layout(
+                text,
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_size(text);
+                    match lyric {
+                        Some(line) => lyric_ticker(ui, line, reduced, true),
+                        None => ui.add(
+                            egui::Label::new(RichText::new(title).size(12.0))
+                                .truncate()
+                                .sense(Sense::click()),
+                        ),
+                    }
+                },
+            )
+            .inner
+            .on_hover_text(tooltip);
+        if response.clicked() {
+            self.expanded = !self.expanded;
+        }
+        let mut right = ui.new_child(wing(center + camera / 2.0 + 5.0, row.right()));
+        right.spacing_mut().item_spacing.x = 4.0;
+        // The bars take 20 pt and the spacing 4; the clock gets the rest.
+        let clock_width = (right.available_width() - 24.0).max(20.0);
+        self.clock(&mut right, clock_width);
+        self.eq_bars(&mut right);
+    }
+
+    /// Time over date; a click opens or closes the notch.
+    fn clock(&mut self, ui: &mut egui::Ui, width: f32) {
+        let now = chrono::Local::now();
+        let (clock, date) = date_time(&now);
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 32.0), Sense::click());
+        ui.painter().text(
+            rect.center_top() + Vec2::new(0.0, 1.0),
+            egui::Align2::CENTER_TOP,
+            clock,
+            egui::FontId::proportional(12.0),
+            ink(),
+        );
+        ui.painter().text(
+            rect.center_bottom() - Vec2::new(0.0, 2.0),
+            egui::Align2::CENTER_BOTTOM,
+            date,
+            egui::FontId::proportional(9.0),
+            muted(),
+        );
+        if response
+            .on_hover_text(format!(
+                "{} · waktu lokal PC",
+                now.format("%d/%m/%Y %H:%M %:z")
+            ))
+            .clicked()
+        {
+            self.expanded = !self.expanded;
+        }
     }
 
     /// Three small bars that bounce while music plays.
