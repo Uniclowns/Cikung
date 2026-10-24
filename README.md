@@ -87,6 +87,8 @@ This is an expanded desktop release, **not complete CouCou parity**. Native iOS/
 
 ## Version history
 
+Version 0.14.1 gives the Mac the same notch as Windows: one row with the cat, song or lyric, clock and date, and music bars, hanging just below the camera, with a black band over the camera so it still joins the MacBook notch. The open panel matches Windows too.
+
 Version 0.14 adds a Windows installer (`Cikung-Setup.exe`), a direct `Cikung.exe` download and a Mac disk image (`.dmg`). On Windows the notch no longer shows a taskbar or Alt+Tab entry, and Cikung starts right at sign-in through a per-user logon task instead of the delayed Run list. On a MacBook the collapsed notch is as compact as on Windows: the cat and music bars sit beside the camera, the song or lyric and the clock sit in a strip below it, and a cat in the menu bar opens Cikung or Settings, or quits it.
 
 Version 0.13 adds Appearance themes in Settings → General: Album colour (black that follows the song's cover), Pure black, White and Orange. On a MacBook camera notch the collapsed notch shows the cat and song title left of the camera, the clock, date and music bars right of it, and the live lyric in a strip below the camera.
