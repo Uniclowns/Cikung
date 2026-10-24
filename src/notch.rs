@@ -7,6 +7,9 @@ use eframe::egui::{
 pub const COLLAPSED: Vec2 = vec2(252.0, 40.0);
 /// Collapsed notch widened for a live lyric line, like Nusa's music pill.
 pub const COLLAPSED_LYRIC: Vec2 = vec2(360.0, 40.0);
+/// Each side of a Mac camera notch on the top row. The clock, date and music bars need
+/// 118 pt there with their spacing and the row's padding; 2 pt spare.
+pub const CAMERA_WING: f32 = 120.0;
 /// Open panel width. The host is wider so the spring can overshoot without clipping.
 pub const OPEN_WIDTH: f32 = 580.0;
 pub const HOST: Vec2 = vec2(604.0, 480.0);
@@ -76,8 +79,8 @@ impl Motion {
         self.sample(now) != self.target || self.state(now).1 != Vec2::ZERO
     }
     pub fn openness(&self, now: f64) -> f32 {
-        // Measured by height: the wider lyric pill never looks half open. 240 pt is the
-        // shortest open page (Music).
+        // Measured by height: wider collapsed shapes (lyric pill, Mac camera-notch wings)
+        // never look half open. 240 pt is the shortest open page (Music).
         ((self.sample(now).y - COLLAPSED.y) / (240.0 - COLLAPSED.y)).clamp(0.0, 1.0)
     }
 }
