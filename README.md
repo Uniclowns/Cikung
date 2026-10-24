@@ -26,7 +26,7 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 - A quick pointer pass does not open the panel. Leaving gets a short grace period; moving back cancels closing. Clicking inside gives a longer grace period. Popups, typing, and dragging hold it open.
 - Click **×** or press Escape to collapse. It stays at the top center and waits for you to leave before hover can open it again.
 - **Ctrl+Alt+C** toggles the single notch; change its letter in Settings.
-- Windows borderless fullscreen apps tuck the notch away on its screen. Ctrl+Alt+C can still open it; change this behavior in Settings → General.
+- The notch stays in front of fullscreen apps, such as a YouTube video in fullscreen. To have it step aside instead, turn on Settings → General → Tuck away during fullscreen apps (Windows); Ctrl+Alt+C still opens it.
 - Right-click the cat for its wardrobe or quit. The tray also has Settings and Quit.
 - Settings opens a separate window with grouped FLOW / NOTCH navigation. General selects the display and optional startup; Music & lyrics controls automatic Music on hover and lyrics; Shortcuts changes the global shortcut. Done or the window close button saves changes and leaves Cikung running.
 

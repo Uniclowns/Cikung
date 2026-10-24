@@ -140,8 +140,8 @@ impl Cikung {
                 "Keep the notch above other windows",
             );
             ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
-                ui.checkbox(&mut self.prefs.hide_in_fullscreen, "Tuck away during fullscreen apps")
-                    .on_hover_text("Hides the collapsed notch during borderless fullscreen on its screen. Ctrl+Alt+C still opens it on request.");
+                ui.checkbox(&mut self.prefs.tuck_in_fullscreen, "Tuck away during fullscreen apps")
+                    .on_hover_text("Off: the notch stays in front of fullscreen apps such as a YouTube video. On: it hides the collapsed notch during borderless fullscreen on its screen; Ctrl+Alt+C still opens it.");
             });
             ui.checkbox(
                 &mut self.prefs.minimal_notch,

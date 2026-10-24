@@ -288,7 +288,9 @@ pub(crate) struct Preferences {
     pub agent_completion_sound: bool,
     pub agent_completion_volume: u8,
     pub auto_collapse: bool,
-    pub hide_in_fullscreen: bool,
+    /// Off: the notch stays in front of fullscreen apps (a YouTube video). On: it tucks away.
+    /// Renamed from `hide_in_fullscreen`, so every profile starts with the notch in front.
+    pub tuck_in_fullscreen: bool,
     pub display: String,
     pub shortcut: String,
     pub companion_shortcut_initialized: bool,
@@ -327,7 +329,7 @@ impl Default for Preferences {
             agent_completion_sound: true,
             agent_completion_volume: 100,
             auto_collapse: true,
-            hide_in_fullscreen: true,
+            tuck_in_fullscreen: false,
             display: String::new(),
             shortcut: "C".into(),
             companion_shortcut_initialized: false,
@@ -1471,14 +1473,18 @@ impl eframe::App for Cikung {
     }
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if self.last_anchor.elapsed() > Duration::from_secs(1) {
-            let fullscreen = self.prefs.hide_in_fullscreen
-                && self.capture.is_none()
+            let covered = self.capture.is_none()
                 && self.audit.is_none()
                 && native::fullscreen_on_display(&self.prefs.display);
+            let fullscreen = covered && self.prefs.tuck_in_fullscreen;
             if fullscreen && !self.fullscreen {
                 self.expanded = false;
             }
             self.fullscreen = fullscreen;
+            // A fullscreen app can be topmost itself; step back in front of it.
+            if covered && !fullscreen && self.prefs.always_on_top {
+                native::raise(self.handle, true);
+            }
         }
         self.tick(ctx);
         // Mac menu-bar cat: Open Cikung, Settings… or Quit Cikung.

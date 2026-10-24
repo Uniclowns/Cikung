@@ -1,3 +1,4 @@
+# Needs Settings → General → "Tuck away during fullscreen apps" turned on; by default the notch stays in front.
 param([string]$Executable='D:\Nuch\dist\Cikung\Cikung.exe',[string]$Report='D:\Nuch\docs\fullscreen-smoke.json')
 $ErrorActionPreference='Stop'
 $Executable=(Resolve-Path -LiteralPath $Executable).Path
