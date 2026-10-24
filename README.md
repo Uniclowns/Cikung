@@ -1,40 +1,26 @@
-# Cikung 0.13.0
+# Cikung
 
-A small orange cat in a black notch, attached to the middle of your screen's top edge. Hover while music is playing to open a compact music player; leave to tuck it away. Written in Rust.
+Cikung is a small orange cat that lives in a black notch at the top center of your screen. Hover it while music plays to see the cover, playback controls and live lyrics; open it for quick tools like a focus timer, tasks, notes, water reminders and a file pocket. It also tells you when Claude, Codex or another AI agent finishes its work. Cikung runs quietly in the background with no taskbar or Dock icon, starts when you sign in, and works on Windows and Mac. It is written in Rust.
+
+## Download
+
+Get Cikung from [GitHub Releases](https://github.com/Uniclowns/Cikung/releases):
+
+| System | File | What it is |
+| --- | --- | --- |
+| Windows | `Cikung-Setup.exe` | Installer for your Windows account, no administrator rights needed. It adds a Start menu shortcut, starts Cikung at sign-in and can be removed in Settings → Apps → Installed apps. |
+| Windows | `Cikung.exe` | Portable app: download it and run it, nothing to install. |
+| Windows | `Cikung-Windows-x64.zip` | The portable app with the integration guides and licenses. |
+| Mac | `Cikung-macOS-universal.dmg` | Open it and drag Cikung to Applications. One app for Apple Silicon and Intel. |
+| Mac | `Cikung-macOS-universal.zip` | The same Mac app as a ZIP. |
+
+The downloads are not signed with a paid certificate. If Windows SmartScreen says it protected your PC, choose More info → Run anyway. The Mac app is ad-hoc signed and not notarized, so macOS may block the first launch; allow it once in System Settings → Privacy & Security → Open Anyway. Mac feature limits are listed in the [Mac guide](docs/macos.md).
+
+## Use Cikung
 
 **One app, one black top-center notch, many kinds of cat.** Six original cat breeds live inside Cikung: orange tabby, tuxedo, calico, siamese, silver shorthair and Snow. **Overview** shows the features with their cats; **Cats** lets you assign cats to features or choose one favorite for the whole app. Music, Focus, Claude, Oh My Pi and Codex can each show a different cat. Opening Cikung again focuses the existing window. [Cat and agent guide](docs/agent-companions.md).
 
-Version 0.13 adds Appearance themes in Settings → General: Album colour (black that follows the song's cover), Pure black, White and Orange. On a MacBook camera notch the collapsed notch shows the cat and song title left of the camera, the clock, date and music bars right of it, and the live lyric in a strip below the camera.
-
-Version 0.12.1 makes the Mac build sit on the MacBook camera notch, above the menu bar: collapsed, the cat and music bars sit on either side of the camera; open, the header splits around it. [Mac guide](docs/macos.md).
-
-Version 0.12 restyles the notch after the native Nusa app: a springy open/close, a gradient tinted from the album cover, a live lyric ticker in the collapsed notch, a scrolling lyric list, flat playback controls and Figtree Bold. Tools are one page at a time with side arrows, a page indicator and a gear for Settings; playback options moved to Settings → Music. The file pocket shows real Explorer/Finder icons and files can be dragged back out. Claude App completion notices work with several prompt boxes open, the notch no longer shows a taskbar button, the exe is about 6.8 MB and resting memory is about 10 MB in Task Manager. Mac gains album covers, volume, the completion chime and the pocket's icons and drag-out. [Nusa findings](docs/nusa-reference.md), [Mac guide](docs/macos.md).
-
-Version 0.11.1 embeds the orange cat head in the Windows executable and prepares native Mac icon/bundle metadata, a universal Apple Silicon + Intel build script and artifact workflow. The Mac build kit contains source, not a compiled Mac app; native Mac validation remains pending. [Mac build guide](docs/macos.md).
-
-Version 0.11 adds a compact local date/time header and refines page transitions using the Notch UI study, while keeping the CouCou-inspired black cat notch and separate Settings. [Clock and motion guide](docs/coucou-clock-motion.md).
-
-Version 0.10 adds a short completion chime for linked Claude App and Codex / ChatGPT App turns, plus connected Claude Code and coding-agent hook completions. Version 0.10.1 adds a saved 0–100% chime volume slider. Adjust, mute or preview it in Settings → Notifications. [Completion sound guide](docs/completion-sounds.md).
-
-Version 0.9 adds Windows notification mirroring for WhatsApp and WhatsApp Desk. Settings → Notifications controls the reader, permission and optional sender/message previews. Notifications stay on this PC and existing alerts are quiet at startup. [WhatsApp notification guide](docs/whatsapp-notifications.md).
-
-Version 0.8.1 smooths notch reversals and page changes, previews the file pocket during a drag, and restores the previous panel when a drag is canceled. [Animation changes and validation](docs/hover-polish.md).
-
-Version 0.8 applies useful Nusa preview ideas: click-to-seek synced lyrics, editable tasks with due reminders, water volume goals/hours/history, and fullscreen tuck-away on Windows. [Reference findings and guide](docs/nusa-reference.md).
-
-Version 0.7 adds Bluetooth connect/disconnect notifications on Windows and a Game assistant for noncompetitive games. Enter your game and situation, choose a spoiler level, then ask your configured AI or prepare the question for Claude / Codex desktop. [Bluetooth and game guide](docs/bluetooth-game.md).
-
-Version 0.6.1 adds a CouCou-inspired settings hub: FLOW / NOTCH navigation, black rounded cards, warm headers, and dedicated pages for Agents, Chat, Music and integrations. [Settings hub and reference findings](docs/settings-hub.md).
-
-Version 0.6 embeds **Plus Jakarta Sans** and connects the Agents page to **Claude App** and **Codex / ChatGPT App** through Windows accessibility. It shows active conversation text and working/ready status, and sends a message only when you press Send. Existing app drafts are preserved. [Desktop app links](docs/desktop-apps.md).
-
-Version 0.5 adds automatic Music on hover, a compact cover/transport/lyrics layout, and a separate native Settings window. **Tools** returns to the other features. **Settings** and **Cats** open the same popup; closing it keeps the notch running. Lyrics are now found automatically when a song starts or changes; imported LRC files also work. Turn this off in Settings → Music & lyrics if desired.
-
-Version 0.4 replaces the separate companion processes from 0.3 with one shared app. Previous tasks, notes, files and feature settings are merged once into the shared profile, with the original files retained and a backup of the previous shared profile.
-
-## Open Cikung
-
-Run `dist/Cikung/Cikung.exe`, or extract `dist/Cikung-Windows-x64.zip` and open `Cikung.exe`. The cat and phone companion are embedded. Keep the included setup guides and hook script for integrations.
+After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs from any folder. On Mac, open Cikung from Applications and quit it from the cat in the menu bar. The cats and the phone companion are built into the app; the integration guides are in `docs/` and in the Windows ZIP.
 
 - Hover to expand. Click the header to open or close it. The battery percentage and Pin feature have been removed.
 - A quick pointer pass does not open the panel. Leaving gets a short grace period; moving back cancels closing. Clicking inside gives a longer grace period. Popups, typing, and dragging hold it open.
@@ -43,10 +29,6 @@ Run `dist/Cikung/Cikung.exe`, or extract `dist/Cikung-Windows-x64.zip` and open 
 - Windows borderless fullscreen apps tuck the notch away on its screen. Ctrl+Alt+C can still open it; change this behavior in Settings → General.
 - Right-click the cat for its wardrobe or quit. The tray also has Settings and Quit.
 - Settings opens a separate window with grouped FLOW / NOTCH navigation. General selects the display and optional startup; Music & lyrics controls automatic Music on hover and lyrics; Shortcuts changes the global shortcut. Done or the window close button saves changes and leaves Cikung running.
-
-## Download
-
-Get the Windows x64 portable ZIP or the experimental Mac universal app (Apple Silicon + Intel) from [GitHub Releases](https://github.com/Uniclowns/Cikung/releases). Extract the Windows ZIP and run Cikung.exe; on Mac, extract the ZIP and move Cikung.app to Applications. The Mac build is ad-hoc signed and not notarized; its feature limits are listed in the [Mac guide](docs/macos.md).
 
 ## Features
 
@@ -101,7 +83,39 @@ Phone access uses authenticated trusted-LAN HTTP with revocable sessions; do not
 
 Windows x64 is built and tested. Desktop app conversation links currently use Windows UI Automation; Claude must finish loading/sign-in, and app UI changes can require adapter updates. macOS/Linux desktop app links are not implemented. Linux MPRIS and macOS Spotify/Music/VLC scripting adapters remain in source. Native macOS/Linux validation is pending. macOS browser detection and non-Windows native recording/dictation/tray/global shortcuts are not implemented; Wayland can restrict placement.
 
-This is an expanded desktop release, **not complete CouCou parity**. Native iOS/Android applications and widgets, wake-word voice actions, portfolio/exchange tracking, automatic offline model installation, every agent-specific installer, all ten UI languages, coding analytics/share-image recaps, native installers and signing remain work. Service clients read status; they do not send emails, create payments or modify accounts. [Feature coverage](docs/feature-coverage.md) records the open work.
+This is an expanded desktop release, **not complete CouCou parity**. Native iOS/Android applications and widgets, wake-word voice actions, portfolio/exchange tracking, automatic offline model installation, every agent-specific installer, all ten UI languages, coding analytics/share-image recaps, and code signing/notarization remain work. Service clients read status; they do not send emails, create payments or modify accounts. [Feature coverage](docs/feature-coverage.md) records the open work.
+
+## Version history
+
+Version 0.14 adds a Windows installer (`Cikung-Setup.exe`), a direct `Cikung.exe` download and a Mac disk image (`.dmg`). On Windows the notch no longer shows a taskbar or Alt+Tab entry, and Cikung starts right at sign-in through a per-user logon task instead of the delayed Run list. On a MacBook the collapsed notch is as compact as on Windows: the cat and music bars sit beside the camera, the song or lyric and the clock sit in a strip below it, and a cat in the menu bar opens Cikung or Settings, or quits it.
+
+Version 0.13 adds Appearance themes in Settings → General: Album colour (black that follows the song's cover), Pure black, White and Orange. On a MacBook camera notch the collapsed notch shows the cat and song title left of the camera, the clock, date and music bars right of it, and the live lyric in a strip below the camera.
+
+Version 0.12.1 makes the Mac build sit on the MacBook camera notch, above the menu bar: collapsed, the cat and music bars sit on either side of the camera; open, the header splits around it. [Mac guide](docs/macos.md).
+
+Version 0.12 restyles the notch after the native Nusa app: a springy open/close, a gradient tinted from the album cover, a live lyric ticker in the collapsed notch, a scrolling lyric list, flat playback controls and Figtree Bold. Tools are one page at a time with side arrows, a page indicator and a gear for Settings; playback options moved to Settings → Music. The file pocket shows real Explorer/Finder icons and files can be dragged back out. Claude App completion notices work with several prompt boxes open, the notch no longer shows a taskbar button, the exe is about 6.8 MB and resting memory is about 10 MB in Task Manager. Mac gains album covers, volume, the completion chime and the pocket's icons and drag-out. [Nusa findings](docs/nusa-reference.md), [Mac guide](docs/macos.md).
+
+Version 0.11.1 embeds the orange cat head in the Windows executable and prepares native Mac icon/bundle metadata, a universal Apple Silicon + Intel build script and artifact workflow. The Mac build kit contains source, not a compiled Mac app; native Mac validation remains pending. [Mac build guide](docs/macos.md).
+
+Version 0.11 adds a compact local date/time header and refines page transitions using the Notch UI study, while keeping the CouCou-inspired black cat notch and separate Settings. [Clock and motion guide](docs/coucou-clock-motion.md).
+
+Version 0.10 adds a short completion chime for linked Claude App and Codex / ChatGPT App turns, plus connected Claude Code and coding-agent hook completions. Version 0.10.1 adds a saved 0–100% chime volume slider. Adjust, mute or preview it in Settings → Notifications. [Completion sound guide](docs/completion-sounds.md).
+
+Version 0.9 adds Windows notification mirroring for WhatsApp and WhatsApp Desk. Settings → Notifications controls the reader, permission and optional sender/message previews. Notifications stay on this PC and existing alerts are quiet at startup. [WhatsApp notification guide](docs/whatsapp-notifications.md).
+
+Version 0.8.1 smooths notch reversals and page changes, previews the file pocket during a drag, and restores the previous panel when a drag is canceled. [Animation changes and validation](docs/hover-polish.md).
+
+Version 0.8 applies useful Nusa preview ideas: click-to-seek synced lyrics, editable tasks with due reminders, water volume goals/hours/history, and fullscreen tuck-away on Windows. [Reference findings and guide](docs/nusa-reference.md).
+
+Version 0.7 adds Bluetooth connect/disconnect notifications on Windows and a Game assistant for noncompetitive games. Enter your game and situation, choose a spoiler level, then ask your configured AI or prepare the question for Claude / Codex desktop. [Bluetooth and game guide](docs/bluetooth-game.md).
+
+Version 0.6.1 adds a CouCou-inspired settings hub: FLOW / NOTCH navigation, black rounded cards, warm headers, and dedicated pages for Agents, Chat, Music and integrations. [Settings hub and reference findings](docs/settings-hub.md).
+
+Version 0.6 embeds **Plus Jakarta Sans** and connects the Agents page to **Claude App** and **Codex / ChatGPT App** through Windows accessibility. It shows active conversation text and working/ready status, and sends a message only when you press Send. Existing app drafts are preserved. [Desktop app links](docs/desktop-apps.md).
+
+Version 0.5 adds automatic Music on hover, a compact cover/transport/lyrics layout, and a separate native Settings window. **Tools** returns to the other features. **Settings** and **Cats** open the same popup; closing it keeps the notch running. Lyrics are now found automatically when a song starts or changes; imported LRC files also work. Turn this off in Settings → Music & lyrics if desired.
+
+Version 0.4 replaces the separate companion processes from 0.3 with one shared app. Previous tasks, notes, files and feature settings are merged once into the shared profile, with the original files retained and a backup of the previous shared profile.
 
 ## Build
 
