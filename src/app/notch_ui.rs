@@ -29,23 +29,15 @@ impl Cikung {
         ));
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 9.0;
+            if !show_actions && self.minimal_idle() {
+                // Cat (22) + spacing (9) + time (~34), centred in the minimal pill.
+                ui.add_space(((width - 65.0) / 2.0).max(0.0));
+                self.draw_cat(ui, 22.0);
+                ui.label(RichText::new(&clock).size(13.0).strong().color(ink()));
+                return;
+            }
             self.draw_cat(ui, 31.0);
-            let notice = self.notices.back().filter(|n| {
-                matches!(
-                    n.title.as_str(),
-                    "Bluetooth"
-                        | "Battery"
-                        | "Network"
-                        | "Caps Lock"
-                        | "AI finished"
-                        | "WhatsApp"
-                        | "WhatsApp test"
-                        | "Task reminder"
-                        | "Water break"
-                        | "Focus complete"
-                        | "Break complete"
-                ) && n.until > Instant::now()
-            });
+            let notice = self.header_notice();
             let tooltip = notice
                 .map(|n| n.text.clone())
                 .unwrap_or_else(|| "Click to open or close · Escape to close".into());
@@ -167,6 +159,40 @@ impl Cikung {
                 self.eq_bars(ui);
             }
         });
+    }
+
+    /// The latest notice the collapsed header shows in place of the title.
+    pub(super) fn header_notice(&self) -> Option<&Notice> {
+        self.notices.back().filter(|n| {
+            matches!(
+                n.title.as_str(),
+                "Bluetooth"
+                    | "Battery"
+                    | "Network"
+                    | "Caps Lock"
+                    | "AI finished"
+                    | "WhatsApp"
+                    | "WhatsApp test"
+                    | "Task reminder"
+                    | "Water break"
+                    | "Focus complete"
+                    | "Break complete"
+            ) && n.until > Instant::now()
+        })
+    }
+
+    /// Nusa's minimal notch: just the cat and the time while nothing plays or needs saying.
+    pub(super) fn minimal_idle(&self) -> bool {
+        self.prefs.minimal_notch
+            && !self.demo
+            && self.header_notice().is_none()
+            && self.file_hover.is_none()
+            && !self.recorder.is_recording()
+            && !self.tools.focus.running
+            && self
+                .session
+                .as_ref()
+                .is_none_or(|s| s.state != PlaybackState::Playing)
     }
 
     /// Three small bars that bounce while music plays.

@@ -281,6 +281,8 @@ pub(crate) struct Preferences {
     pub bluetooth_notifications: bool,
     /// Battery, internet and Caps Lock heads-ups in the notch.
     pub system_notices: bool,
+    /// Nusa's minimal notch: only the cat and the time while nothing plays.
+    pub minimal_notch: bool,
     pub whatsapp_notifications: bool,
     pub whatsapp_preview: bool,
     pub agent_completion_sound: bool,
@@ -319,6 +321,7 @@ impl Default for Preferences {
             auto_lyrics: true,
             bluetooth_notifications: true,
             system_notices: true,
+            minimal_notch: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,
             agent_completion_sound: true,
@@ -376,6 +379,9 @@ pub struct Cikung {
     monitor: Option<Monitor>,
     bluetooth: Option<crate::bluetooth::Monitor>,
     system: Option<crate::system_notices::Monitor>,
+    /// System output level and mute for the Music page's slider, and when they were read.
+    volume: Option<(f32, bool)>,
+    volume_checked: Option<Instant>,
     whatsapp: Option<crate::whatsapp::Monitor>,
     notification_access: Option<std::sync::mpsc::Receiver<Result<crate::whatsapp::Access, String>>>,
     game: game::GameAssistant,
@@ -616,6 +622,8 @@ impl Cikung {
             monitor,
             bluetooth: None,
             system: None,
+            volume: None,
+            volume_checked: None,
             whatsapp: None,
             notification_access: None,
             game: game::GameAssistant::default(),
@@ -1526,6 +1534,8 @@ impl eframe::App for Cikung {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
+            } else if self.minimal_idle() {
+                notch::COLLAPSED_MINIMAL
             } else {
                 notch::COLLAPSED
             },
@@ -1601,9 +1611,10 @@ impl eframe::App for Cikung {
                     base,
                     Color32::from_rgb(r, g, b),
                 );
+                // Never taller than the pill, so the minimal notch's row stays centred.
                 let header_rect = Rect::from_min_size(
                     surface.min + Vec2::new(14.0, 2.0),
-                    Vec2::new((size.x - 28.0).max(1.0), 36.0),
+                    Vec2::new((size.x - 28.0).max(1.0), (size.y - 4.0).clamp(1.0, 36.0)),
                 );
                 let mut header = ui.new_child(
                     egui::UiBuilder::new()

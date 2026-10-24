@@ -166,11 +166,16 @@ impl Cikung {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
+                        // Nusa's row: lyrics left, playback centred, volume right.
+                        let left = ui.cursor().left();
                         let width = ui.available_width();
-                        ui.add_space(((width - 174.0) / 2.0).max(0.0));
                         if transport(ui, Transport::Lyrics, true, false).clicked() {
                             self.navigate(Page::Lyrics);
                         }
+                        // Previous, play and next: 36 + 42 + 36 pt and two 6 pt gaps.
+                        ui.add_space(
+                            ((width - 126.0) / 2.0 - (ui.cursor().left() - left)).max(0.0),
+                        );
                         if transport(ui, Transport::Previous, !self.demo, false).clicked() {
                             self.control(MediaCommand::Previous);
                         }
@@ -191,6 +196,8 @@ impl Cikung {
                         if transport(ui, Transport::Next, !self.demo, false).clicked() {
                             self.control(MediaCommand::Next);
                         }
+                        ui.add_space((width - VOLUME_WIDTH - (ui.cursor().left() - left)).max(0.0));
+                        self.volume_control(ui);
                     });
                 },
             );
@@ -210,6 +217,64 @@ impl Cikung {
                 },
             );
         });
+    }
+    /// Nusa-style speaker and level slider for the system output; the speaker mutes.
+    fn volume_control(&mut self, ui: &mut egui::Ui) {
+        // Re-read now and then so keyboard or system changes show; osascript is slower.
+        let every = Duration::from_secs(if cfg!(target_os = "macos") { 10 } else { 2 });
+        if self.volume_checked.is_none_or(|at| at.elapsed() > every) {
+            self.volume = native::system_volume();
+            self.volume_checked = Some(Instant::now());
+        }
+        let Some((mut level, mut muted)) = self.volume else {
+            return;
+        };
+        let (icon, speaker) = ui.allocate_exact_size(Vec2::new(18.0, 30.0), Sense::click());
+        let waves = if muted || level <= 0.0 {
+            0
+        } else if level > 0.5 {
+            2
+        } else {
+            1
+        };
+        let color = ink().gamma_multiply(if speaker.hovered() { 1.0 } else { 0.8 });
+        paint_speaker(ui.painter(), icon.center(), waves, muted, color);
+        let mut changed = speaker
+            .on_hover_text(if muted { "Unmute" } else { "Mute" })
+            .clicked();
+        if changed {
+            muted = !muted;
+        }
+        let slider = ui
+            .scope(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.spacing_mut().slider_width = VOLUME_WIDTH - 22.0;
+                ui.spacing_mut().slider_rail_height = 3.0;
+                ui.visuals_mut().selection.bg_fill = ink();
+                ui.add(
+                    egui::Slider::new(&mut level, 0.0..=1.0)
+                        .show_value(false)
+                        .trailing_fill(true)
+                        .handle_shape(egui::style::HandleShape::Circle),
+                )
+            })
+            .inner;
+        if slider.changed() {
+            muted = false;
+        }
+        if slider.dragged() {
+            // Don't let the periodic read undo a drag in progress.
+            self.volume_checked = Some(Instant::now());
+        }
+        // An osascript per drag frame would pile up; the Mac sets the level on release.
+        changed |= slider.drag_stopped()
+            || (slider.changed() && (cfg!(target_os = "windows") || !slider.dragged()));
+        self.volume = Some((level, muted));
+        if changed {
+            native::set_system_volume(level, muted);
+            self.volume_checked = Some(Instant::now());
+        }
+        slider.on_hover_text(format!("Volume {:.0}%", level * 100.0));
     }
     /// Player choice, shuffle/repeat and system volume; lives in Settings → Music.
     pub(crate) fn playback_options(&mut self, ui: &mut egui::Ui) {
@@ -513,6 +578,44 @@ pub(crate) fn album_tint(image: &image::RgbaImage) -> Color32 {
     // Nusa's tint peaks near 115/255, dark enough to keep white text readable.
     let [r, g, b] = mean.map(|channel| (channel / peak * (72.0 + 46.0 * saturation)).round() as u8);
     Color32::from_rgb(r, g, b)
+}
+
+/// The speaker (18 pt) and the volume slider beside it on the transport row.
+const VOLUME_WIDTH: f32 = 66.0;
+
+/// A speaker with 0–2 sound waves, or a cross when muted.
+fn paint_speaker(painter: &egui::Painter, c: Pos2, waves: u8, muted: bool, color: Color32) {
+    painter.rect_filled(
+        Rect::from_center_size(c + Vec2::new(-5.0, 0.0), Vec2::new(4.0, 6.0)),
+        1,
+        color,
+    );
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            c + Vec2::new(-4.0, -3.0),
+            c + Vec2::new(1.0, -7.0),
+            c + Vec2::new(1.0, 7.0),
+            c + Vec2::new(-4.0, 3.0),
+        ],
+        color,
+        Stroke::NONE,
+    ));
+    let stroke = Stroke::new(1.5_f32, color);
+    if muted {
+        painter.line_segment([c + Vec2::new(4.0, -3.0), c + Vec2::new(9.0, 3.0)], stroke);
+        painter.line_segment([c + Vec2::new(4.0, 3.0), c + Vec2::new(9.0, -3.0)], stroke);
+        return;
+    }
+    for wave in 0..waves {
+        let radius = 4.5 + f32::from(wave) * 3.5;
+        let points = (0..=8)
+            .map(|i| {
+                let angle = -0.9 + 1.8 * i as f32 / 8.0;
+                c + Vec2::new(1.0 + radius * angle.cos(), radius * angle.sin())
+            })
+            .collect();
+        painter.add(egui::Shape::line(points, stroke));
+    }
 }
 
 enum Transport {

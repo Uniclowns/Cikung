@@ -143,6 +143,10 @@ impl Cikung {
                 ui.checkbox(&mut self.prefs.hide_in_fullscreen, "Tuck away during fullscreen apps")
                     .on_hover_text("Hides the collapsed notch during borderless fullscreen on its screen. Ctrl+Alt+C still opens it on request.");
             });
+            ui.checkbox(
+                &mut self.prefs.minimal_notch,
+                "Minimal notch: just the cat and the time while nothing plays",
+            );
             if ui
                 .checkbox(&mut self.autostart, "Start Cikung when I sign in")
                 .changed()

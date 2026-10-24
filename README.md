@@ -38,19 +38,19 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 | WhatsApp notifications | Windows notification reader for WhatsApp and WhatsApp Desk, optional previews, permission/status and local test. |
 | Bluetooth | Windows Classic/LE connection notifications and connected device names; opt-out in General. |
 | System notices | Windows heads-ups in the notch, as in Nusa: charger connected or unplugged, low (20 %) and critical (10 %) battery, fully charged, internet connected, lost or without access, and Caps Lock on or off; opt-out in General. |
-| Music | System media detection, title/artist/covers, player selection, play/pause, previous/next, seek, shuffle and repeat when supported; Windows system volume. |
+| Music | System media detection, title/artist/covers, player selection, play/pause, previous/next, seek, shuffle and repeat when supported; a speaker and system volume slider beside the transport, as in Nusa (Windows and Mac). |
 | Lyrics | Automatic LRCLIB lookup, imported LRC/plain lyrics and click-to-seek synchronized lines on supported players. |
 | Focus | Focus/break timers, custom duration, pause/resume, session and focused-time counts. |
-| Files | Drop files on the notch, keep local references, open/reveal them, remove references. Originals are not moved or deleted. |
+| Files | Drop files on the notch, keep local references, open/reveal them, remove one or Clear all. Originals are not moved or deleted. |
 | Tasks | Persistent tasks, completion, editing and optional local due reminders while Cikung runs. |
-| Water | Opt-in reminders, bottle volume, daily ml goal, active hours, snooze, drink count and recent volume history. |
+| Water | Opt-in reminders, bottle volume, daily ml goal, active hours, snooze, drink count, an hourly chart of today's drinks (as in Nusa) and recent daily totals. |
 | Notes | Local notes, imports/export, explicit Windows microphone + PC-audio recording, dictation, transcription, AI summaries and marked action-item extraction. |
 | Agents | Claude App and Codex / ChatGPT App desktop status, visible conversation and explicit Send to active chat on Windows; Oh My Pi retains its connected terminal integration. |
 | Chat | OpenAI, Anthropic, Gemini, DeepSeek, Qwen, Moonshot/Kimi, Ollama and LM Studio. |
 | Services | Read-only GitHub, Stripe, Vercel, Resend, Notion, Cal.com and n8n account/status clients. |
 | Phone | Opt-in same-Wi-Fi browser companion, QR pairing, agent activity/diffs/approvals, media controls and revocation. |
 | Cats | Six generated breeds, per-feature and per-agent cat choices, a favorite for the whole app, accessories, reactions and reduced motion. |
-| Settings | Display, hover, global shortcut, secure provider keys, VLC connection and optional user-scope sign-in startup. |
+| Settings | Display, hover, global shortcut, secure provider keys, VLC connection, optional user-scope sign-in startup and Nusa's minimal notch (only the cat and the time while nothing plays, on by default). |
 
 The music animation follows playback, not audio beats. Media information and controls depend on the player. Nothing in normal mode uses sample account data; demo media is explicitly labeled.
 

@@ -7,11 +7,13 @@ use eframe::egui::{
 pub const COLLAPSED: Vec2 = vec2(252.0, 40.0);
 /// Collapsed notch widened for a live lyric line, like Nusa's music pill.
 pub const COLLAPSED_LYRIC: Vec2 = vec2(360.0, 40.0);
+/// Nusa's minimal notch while nothing plays: just the cat and the time.
+pub const COLLAPSED_MINIMAL: Vec2 = vec2(120.0, 32.0);
 /// Open panel width. The host is wider so the spring can overshoot without clipping.
 pub const OPEN_WIDTH: f32 = 580.0;
 pub const HOST: Vec2 = vec2(604.0, 480.0);
 /// Smallest squash the collapse undershoot may reach.
-const SQUASH: Vec2 = vec2(COLLAPSED.x - 28.0, COLLAPSED.y - 6.0);
+const SQUASH: Vec2 = vec2(COLLAPSED_MINIMAL.x - 28.0, COLLAPSED_MINIMAL.y - 6.0);
 /// Underdamped spring measured from Nusa 1.0's notch: ~7% overshoot, peak after ~250 ms.
 const DAMPING: f32 = 0.65;
 const FREQUENCY: f32 = 17.5;

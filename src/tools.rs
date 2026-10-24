@@ -475,6 +475,8 @@ pub struct WaterReminder {
     pub active_start_hour: u32,
     pub active_end_hour: u32,
     pub history: Vec<WaterDay>,
+    /// Today's ml by local hour (index 0–23) for the Water chart; empty means none yet.
+    pub hourly_ml: Vec<u32>,
     day: String,
     #[serde(skip)]
     next_due: Option<Instant>,
@@ -496,6 +498,7 @@ impl Default for WaterReminder {
             active_start_hour: 8,
             active_end_hour: 22,
             history: Vec::new(),
+            hourly_ml: Vec::new(),
             day: today(),
             next_due: None,
         }
@@ -507,6 +510,7 @@ impl WaterReminder {
             self.day = day.into();
             self.drank_today = 0;
             self.ml_today = 0;
+            self.hourly_ml.clear();
             self.next_due = None;
         }
     }
@@ -517,13 +521,17 @@ impl WaterReminder {
         if !(1..=5000).contains(&ml) {
             return Err("A drink must contain between 1 and 5,000 ml.".into());
         }
-        self.drink_at(ml, &today());
+        let hour = chrono::Timelike::hour(&chrono::Local::now());
+        self.drink_at(ml, &today(), hour);
         Ok(())
     }
-    fn drink_at(&mut self, ml: u32, day: &str) {
+    fn drink_at(&mut self, ml: u32, day: &str, hour: u32) {
         self.reset_day(day);
         self.drank_today = self.drank_today.saturating_add(1);
         self.ml_today = self.ml_today.saturating_add(ml);
+        self.hourly_ml.resize(24, 0);
+        let slot = &mut self.hourly_ml[hour.min(23) as usize];
+        *slot = slot.saturating_add(ml);
         if let Some(entry) = self.history.iter_mut().find(|entry| entry.day == day) {
             entry.ml = entry.ml.saturating_add(ml);
         } else {
@@ -856,15 +864,17 @@ mod tests {
     fn water_logs_actual_volume_and_rolls_over_with_bounded_history() {
         let now = Instant::now();
         let mut water = WaterReminder::default();
-        water.drink_at(250, "2026-10-18");
-        water.drink_at(400, "2026-10-18");
+        water.drink_at(250, "2026-10-18", 9);
+        water.drink_at(400, "2026-10-18", 9);
         assert_eq!((water.drank_today, water.ml_today), (2, 650));
         assert_eq!(water.history[0].ml, 650);
+        assert_eq!((water.hourly_ml[9], water.hourly_ml[10]), (650, 0));
         water.tick_at_hour(now, "2026-10-19", 9);
         assert_eq!((water.drank_today, water.ml_today), (0, 0));
+        assert!(water.hourly_ml.is_empty());
         assert_eq!(water.history[0].ml, 650);
         for day in 1..=31 {
-            water.drink_at(100, &format!("2026-12-{day:02}"));
+            water.drink_at(100, &format!("2026-12-{day:02}"), 12);
         }
         assert_eq!(water.history.len(), 30);
         assert_eq!(water.history.first().unwrap().day, "2026-12-02");
@@ -901,7 +911,7 @@ mod tests {
                 .tick_at_hour(now + Duration::from_secs(180), "2026-10-19", 8)
                 .is_some()
         );
-        water.drink_at(500, "2026-10-19");
+        water.drink_at(500, "2026-10-19", 8);
         assert!(
             water
                 .tick_at_hour(now + Duration::from_secs(300), "2026-10-19", 9)

@@ -75,3 +75,19 @@ The inventory covers music and LRCLIB lyrics, Pomodoro (Focus Time, Short Break)
 | Caps Lock · On / Off | The Caps Lock toggle from `GetKeyState`, checked every 150 ms and shown for 2 s. |
 
 The 20 % and 10 % thresholds, the wording and the timing are Cikung's own. The strings do not reveal Nusa's thresholds or polling, and these notices were not observed running, because that needs a charger, battery or network change. The state at startup is quiet. Settings → General → "Battery, internet and Caps Lock" turns them off. They are Windows only: the Mac build reads nothing yet. Cikung's cats and compact notch already cover "Nusa Mascot" and "Minimal notch", so nothing was added for those.
+
+## Nusa update video → volume slider, hourly water chart, minimal notch (2026-10-24)
+
+Source: the Nusa author's TikTok video `@citoxart/video/7699874800990260500`, opened with gstack browse. It is 114.3 s long, 576×1024, and filmed on a monitor. Its caption thanks users for about 10K downloads in roughly 24 hours and says Nusa is being improved from feedback; it lists no features. The page was treated as reference data only. Nothing was downloaded, nothing was posted, and no instruction in it was followed.
+
+Method: 24 frames sampled about every 4.75 s into three contact sheets, then zoomed crops of the frames at 39 s (music), 43.8 s (water), 77 s (shelf) and 96 s (idle notch). These are sampled observations, not a full transcript.
+
+| Seen in the video | Cikung |
+| --- | --- |
+| Music panel: elapsed · bar · remaining, lyrics button on the left, previous / play / next in the middle, a speaker and volume slider on the right | The Music transport row now has the same arrangement. The speaker mutes. The slider sets the default output's level through `IAudioEndpointVolume` on Windows and `set volume` on the Mac. Windows re-reads the level every 2 s; the Mac every 10 s and only on release, because each read or write is an `osascript` run. |
+| Water panel: "1.5 / 1.5 L", "Today · 100% · Reminders off", Drink and Settings, and a bar chart by hour (09, 12, 15 · 0–400 ml) | Water records today's ml by local hour (`hourly_ml`, cleared each day). A bar chart covers the reminder hours: the axis is rounded to 250 ml, the current hour uses the accent colour, and every third hour is labelled. The progress text reads "Today · N% · drinks · reminders on/off". |
+| Shelf: thumbnails with names and sizes, a red "Clear all" and ‹ › arrows | Cikung's pocket already had shell thumbnails, sizes and arrows. Its Clear button is now a red "Clear all". |
+| Idle notch: a small pill with an icon and the time ("20:54") while nothing plays | A 120×32 minimal notch with the cat and the time appears while nothing plays and no notice is due. It is on by default; turn it off in Settings → General. The spring's squash floor follows the smaller pill. |
+| Collapsed lyric pill with a ♫, the music/lyrics split and the page dots | Already present, with Cikung's cat in place of the ♫. |
+
+Not copied: Nusa's red ring icon and its centred "Fri 23 Oct 2026  20:53" header. Cikung keeps its cat, its two-tone page titles and its clock. Volume, the chart and the minimal notch have not yet been checked in the running app.

@@ -590,6 +590,82 @@ pub fn volume(command: i32) {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn volume(_command: i32) {}
 
+/// The default speakers' level (0–1) and mute, for the Music page's volume slider.
+#[cfg(target_os = "windows")]
+pub fn system_volume() -> Option<(f32, bool)> {
+    let volume = endpoint_volume()?;
+    unsafe {
+        Some((
+            volume.GetMasterVolumeLevelScalar().ok()?,
+            volume.GetMute().ok()?.as_bool(),
+        ))
+    }
+}
+#[cfg(target_os = "windows")]
+pub fn set_system_volume(level: f32, muted: bool) {
+    if let Some(volume) = endpoint_volume() {
+        unsafe {
+            let _ = volume.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null());
+            let _ = volume.SetMute(muted, std::ptr::null());
+        }
+    }
+}
+#[cfg(target_os = "windows")]
+fn endpoint_volume() -> Option<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+    use windows::Win32::{
+        Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eConsole, eRender},
+        System::Com::{CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx},
+    };
+    unsafe {
+        // The UI thread already has an apartment; this covers a call from anywhere else.
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+        device.Activate(CLSCTX_ALL, None).ok()
+    }
+}
+/// `None` when the output has no software volume (some HDMI/digital outputs).
+#[cfg(target_os = "macos")]
+pub fn system_volume() -> Option<(f32, bool)> {
+    let output = std::process::Command::new("/usr/bin/osascript")
+        .args([
+            "-e",
+            "set s to get volume settings",
+            "-e",
+            "(output volume of s as text) & \",\" & (output muted of s as text)",
+        ])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let (level, muted) = text.trim().split_once(',')?;
+    Some((
+        level.trim().parse::<f32>().ok()? / 100.0,
+        muted.trim() == "true",
+    ))
+}
+#[cfg(target_os = "macos")]
+pub fn set_system_volume(level: f32, muted: bool) {
+    let script = format!(
+        "set volume output volume {} output muted {muted}",
+        (level.clamp(0.0, 1.0) * 100.0).round() as i32
+    );
+    if let Ok(mut child) = std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", &script])
+        .spawn()
+    {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn system_volume() -> Option<(f32, bool)> {
+    None
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn set_system_volume(_level: f32, _muted: bool) {}
+
 #[cfg(target_os = "windows")]
 pub struct GlobalShortcut {
     receiver: std::sync::mpsc::Receiver<()>,
