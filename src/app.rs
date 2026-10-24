@@ -1617,10 +1617,11 @@ impl eframe::App for Cikung {
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
+            } else if self.minimal_idle() {
+                // Same order as `header`: paused music shows the minimal pill, not the lyric.
+                notch::COLLAPSED_MINIMAL
             } else if let Some(width) = lyric_width {
                 Vec2::new(width, notch::COLLAPSED_LYRIC.y)
-            } else if self.minimal_idle() {
-                notch::COLLAPSED_MINIMAL
             } else {
                 notch::COLLAPSED
             },
