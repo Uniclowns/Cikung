@@ -402,8 +402,9 @@ pub struct Cikung {
     last_shape: Option<[i32; 5]>,
     /// When idle memory was last handed back during the current collapsed rest.
     last_trim: Option<f64>,
-    /// Mac camera notch (width, height): Cikung wraps around it instead of covering it.
-    pub(crate) camera_notch: Option<(f32, f32)>,
+    /// Mac camera notch height: a black band covers the camera and the Windows notch
+    /// hangs below it.
+    pub(crate) camera_notch: Option<f32>,
     last_anchor: Instant,
     fullscreen: bool,
     pub(crate) handle: Option<usize>,
@@ -1463,7 +1464,12 @@ impl eframe::App for Cikung {
             ctx.content_rect().width()
         };
         let center = host_width / 2.0;
-        let old_surface = notch::aligned_surface_rect(center * 2.0, self.motion.sample(now), scale);
+        let top = self.camera_notch.unwrap_or(0.0);
+        let old_surface = notch::aligned_surface_rect(
+            center * 2.0,
+            self.motion.sample(now) + Vec2::new(0.0, top),
+            scale,
+        );
         let pointer = native::pointer_in_window(self.handle, scale)
             .or_else(|| ctx.input(|i| i.pointer.hover_pos()));
         let inside = pointer.is_some_and(|p| {
@@ -1498,10 +1504,6 @@ impl eframe::App for Cikung {
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
-            } else if let Some((camera, height)) = self.camera_notch {
-                // About the Windows pill's width: the cat and music bars sit just beside
-                // the camera, and the pill's row (title or lyric, clock, date) hangs below it.
-                Vec2::new(camera + 2.0 * 48.0, height + 26.0)
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
             } else {
@@ -1514,7 +1516,7 @@ impl eframe::App for Cikung {
         let host_size = if cfg!(target_os = "windows") {
             notch::HOST
         } else {
-            size
+            size + Vec2::new(0.0, top)
         };
         // macOS: AppKit places the window above the menu bar, on the camera notch.
         #[cfg(target_os = "macos")]
@@ -1545,7 +1547,9 @@ impl eframe::App for Cikung {
         }
         self.was_open = self.expanded;
         let center = host_width / 2.0;
-        let surface = notch::aligned_surface_rect(center * 2.0, size, scale);
+        let surface = notch::aligned_surface_rect(center * 2.0, size + Vec2::new(0.0, top), scale);
+        // The Windows notch itself; on a Mac it starts below the camera band.
+        let panel = surface.with_min_y(top);
         let radius = 15.0 + openness * 7.0;
         // The notch draws in the chosen theme; Settings is reset to dark further down.
         set_painting_theme(self.prefs.theme);
@@ -1572,15 +1576,20 @@ impl eframe::App for Cikung {
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 theme_visuals(ui, self.prefs.theme);
+                if top > 0.0 {
+                    // Overlaps the panel by a point so no anti-aliased seam shows.
+                    ui.painter()
+                        .rect_filled(surface.with_max_y(top + 1.0), 0.0, base);
+                }
                 notch::paint_surface(
                     ui.painter(),
-                    surface,
+                    panel,
                     radius,
                     base,
                     Color32::from_rgb(r, g, b),
                 );
                 let header_rect = Rect::from_min_size(
-                    surface.min + Vec2::new(14.0, 2.0),
+                    panel.min + Vec2::new(14.0, 2.0),
                     Vec2::new((size.x - 28.0).max(1.0), 36.0),
                 );
                 let mut header = ui.new_child(
@@ -1588,24 +1597,8 @@ impl eframe::App for Cikung {
                         .id_salt("notch-header")
                         .max_rect(header_rect),
                 );
-                header.set_clip_rect(surface.intersect(ui.clip_rect()));
+                header.set_clip_rect(panel.intersect(ui.clip_rect()));
                 self.header(&mut header);
-                // Mac camera notch: the Windows pill's row hangs in a strip below the camera.
-                if let Some((_, notch_height)) = self.camera_notch
-                    && openness < 0.65
-                {
-                    let strip = Rect::from_min_size(
-                        surface.min + Vec2::new(14.0, notch_height),
-                        Vec2::new((size.x - 28.0).max(1.0), 24.0),
-                    );
-                    let mut child = ui.new_child(
-                        egui::UiBuilder::new()
-                            .id_salt("notch-lyric-strip")
-                            .max_rect(strip),
-                    );
-                    child.set_clip_rect(surface.intersect(ui.clip_rect()));
-                    self.notch_strip(&mut child);
-                }
                 let reveal = ((openness - 0.3) / 0.7).clamp(0.0, 1.0);
                 let opacity = reveal * reveal * (3.0 - 2.0 * reveal);
                 let progress = self.content_motion.begin(
@@ -1621,16 +1614,14 @@ impl eframe::App for Cikung {
                     // and opacity change; labels and controls never reflow mid-hover.
                     let start =
                         ctx.graphics(|g| g.get(ui.layer_id()).map_or(0, |l| l.next_idx().0));
-                    let clip = surface
-                        .shrink2(Vec2::new(3.0, 5.0))
-                        .intersect(ui.clip_rect());
+                    let clip = panel.shrink2(Vec2::new(3.0, 5.0)).intersect(ui.clip_rect());
                     self.content_motion
                         .paint_previous(ui.painter(), clip, opacity, &progress);
                     let body_rect = Rect::from_min_size(
                         Pos2::new(
                             // 26 px sides leave room for the carousel arrows.
                             (host_width - notch::OPEN_WIDTH) / 2.0 + 26.0 + progress.offset,
-                            50.0 + 6.0 * (1.0 - openness),
+                            top + 50.0 + 6.0 * (1.0 - openness),
                         ),
                         Vec2::new(notch::OPEN_WIDTH - 52.0, page_height - 62.0),
                     );
@@ -1640,9 +1631,7 @@ impl eframe::App for Cikung {
                             .max_rect(body_rect),
                     );
                     body.set_clip_rect(
-                        surface
-                            .shrink2(Vec2::new(3.0, 5.0))
-                            .intersect(ui.clip_rect()),
+                        panel.shrink2(Vec2::new(3.0, 5.0)).intersect(ui.clip_rect()),
                     );
                     body.multiply_opacity(opacity * progress.opacity);
                     if !self.expanded || openness <= 0.98 || progress.moving {
@@ -1655,7 +1644,7 @@ impl eframe::App for Cikung {
                         start,
                         self.artwork.as_ref().map(|(_, texture)| texture.clone()),
                     );
-                    self.carousel_arrows(ui, surface, opacity);
+                    self.carousel_arrows(ui, panel, opacity);
                 }
             });
         if inside && ctx.input(|i| i.pointer.any_click()) {
