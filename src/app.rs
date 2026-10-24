@@ -381,6 +381,10 @@ pub struct Cikung {
     monitor: Option<Monitor>,
     bluetooth: Option<crate::bluetooth::Monitor>,
     system: Option<crate::system_notices::Monitor>,
+    /// Mac camera notch (width, height): the pill hangs below it, joined by a black neck.
+    pub(crate) camera_notch: Option<(f32, f32)>,
+    /// Whether the window lets clicks through to the menu bar beside the neck right now.
+    click_through: bool,
     /// System output level and mute for the Music page's slider, and when they were read.
     volume: Option<(f32, bool)>,
     volume_checked: Option<Instant>,
@@ -624,6 +628,8 @@ impl Cikung {
             monitor,
             bluetooth: None,
             system: None,
+            camera_notch: native::camera_notch(),
+            click_through: false,
             volume: None,
             volume_checked: None,
             whatsapp: None,
@@ -1467,6 +1473,47 @@ impl Cikung {
     }
 }
 
+/// Mac camera notch: the pill sits below the camera (`height`) and a neck the camera's
+/// width joins them. Without a camera notch the pill is the whole surface.
+fn notch_parts(surface: Rect, camera: Option<(f32, f32)>) -> (Rect, Option<Rect>) {
+    let Some((width, height)) = camera else {
+        return (surface, None);
+    };
+    let neck = Rect::from_min_size(
+        Pos2::new(surface.center().x - width / 2.0, surface.top()),
+        // A point of overlap so no anti-aliased seam shows between the neck and the pill.
+        Vec2::new(width, height + 1.0),
+    );
+    (surface.with_min_y(surface.top() + height), Some(neck))
+}
+
+/// The neck, with concave fillets where it meets the pill, so the camera notch flows into it.
+fn paint_neck(painter: &egui::Painter, neck: Rect, pill: Rect, color: Color32) {
+    painter.rect_filled(neck, 0.0, color);
+    let radius = 10.0_f32.min((pill.width() - neck.width()) / 2.0);
+    if radius < 1.0 {
+        return;
+    }
+    for (x, side) in [(neck.left(), -1.0_f32), (neck.right(), 1.0)] {
+        let corner = Pos2::new(x, pill.top());
+        let centre = Pos2::new(x + side * radius, pill.top() - radius);
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(corner, color);
+        for step in 0..=8_u32 {
+            // From up the neck's side round to along the pill's top edge.
+            let angle = std::f32::consts::FRAC_PI_2 * step as f32 / 8.0;
+            mesh.colored_vertex(
+                centre + Vec2::new(-side * radius * angle.cos(), radius * angle.sin()),
+                color,
+            );
+            if step > 0 {
+                mesh.add_triangle(0, step, step + 1);
+            }
+        }
+        painter.add(mesh);
+    }
+}
+
 impl eframe::App for Cikung {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0; 4]
@@ -1503,14 +1550,32 @@ impl eframe::App for Cikung {
             ctx.content_rect().width()
         };
         let center = host_width / 2.0;
-        let old_surface = notch::aligned_surface_rect(center * 2.0, self.motion.sample(now), scale);
+        // Mac camera notch: the pill hangs below the camera, joined to it by a neck.
+        let camera = self.camera_notch;
+        let top = camera.map_or(0.0, |(_, height)| height);
+        let old_surface = notch::aligned_surface_rect(
+            center * 2.0,
+            self.motion.sample(now) + Vec2::new(0.0, top),
+            scale,
+        );
+        let (old_pill, old_neck) = notch_parts(old_surface, camera);
         let pointer = native::pointer_in_window(self.handle, scale)
             .or_else(|| ctx.input(|i| i.pointer.hover_pos()));
-        let inside = pointer.is_some_and(|p| {
-            old_surface
-                .expand(if self.expanded { 6.0 } else { 0.0 })
-                .contains(p)
-        });
+        let on_notch = |p: Pos2, grow: f32| {
+            old_pill.expand(grow).contains(p) || old_neck.is_some_and(|neck| neck.contains(p))
+        };
+        let inside = pointer.is_some_and(|p| on_notch(p, if self.expanded { 6.0 } else { 0.0 }));
+        // Beside the neck the window is see-through over the menu bar: let those clicks pass.
+        let through = old_neck.is_some()
+            && pointer.is_some_and(|p| old_surface.contains(p) && !on_notch(p, 0.0));
+        if through != self.click_through {
+            native::set_click_through(self.handle, through);
+            self.click_through = through;
+        }
+        if through {
+            // A pass-through window gets no mouse events; keep watching the pointer.
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
         let held = self.capture.is_some()
             || self.file_hover.is_some()
             || egui::Popup::is_any_open(ctx)
@@ -1552,7 +1617,7 @@ impl eframe::App for Cikung {
         let host_size = if cfg!(target_os = "windows") {
             notch::HOST
         } else {
-            size
+            size + Vec2::new(0.0, top)
         };
         // macOS: AppKit pins the window to the top centre, above the menu bar.
         #[cfg(target_os = "macos")]
@@ -1583,7 +1648,9 @@ impl eframe::App for Cikung {
         }
         self.was_open = self.expanded;
         let center = host_width / 2.0;
-        let surface = notch::aligned_surface_rect(center * 2.0, size, scale);
+        let surface = notch::aligned_surface_rect(center * 2.0, size + Vec2::new(0.0, top), scale);
+        // The Windows notch itself; on a Mac it hangs below the camera's neck.
+        let (pill, neck) = notch_parts(surface, camera);
         let radius = 15.0 + openness * 7.0;
         // The notch draws in the chosen theme; Settings is reset to dark further down.
         set_painting_theme(self.prefs.theme);
@@ -1610,16 +1677,13 @@ impl eframe::App for Cikung {
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 theme_visuals(ui, self.prefs.theme);
-                notch::paint_surface(
-                    ui.painter(),
-                    surface,
-                    radius,
-                    base,
-                    Color32::from_rgb(r, g, b),
-                );
+                if let Some(neck) = neck {
+                    paint_neck(ui.painter(), neck, pill, base);
+                }
+                notch::paint_surface(ui.painter(), pill, radius, base, Color32::from_rgb(r, g, b));
                 // Never taller than the pill, so the minimal notch's row stays centred.
                 let header_rect = Rect::from_min_size(
-                    surface.min + Vec2::new(14.0, 2.0),
+                    pill.min + Vec2::new(14.0, 2.0),
                     Vec2::new((size.x - 28.0).max(1.0), (size.y - 4.0).clamp(1.0, 36.0)),
                 );
                 let mut header = ui.new_child(
@@ -1627,7 +1691,7 @@ impl eframe::App for Cikung {
                         .id_salt("notch-header")
                         .max_rect(header_rect),
                 );
-                header.set_clip_rect(surface.intersect(ui.clip_rect()));
+                header.set_clip_rect(pill.intersect(ui.clip_rect()));
                 self.header(&mut header);
                 let reveal = ((openness - 0.3) / 0.7).clamp(0.0, 1.0);
                 let opacity = reveal * reveal * (3.0 - 2.0 * reveal);
@@ -1644,16 +1708,14 @@ impl eframe::App for Cikung {
                     // and opacity change; labels and controls never reflow mid-hover.
                     let start =
                         ctx.graphics(|g| g.get(ui.layer_id()).map_or(0, |l| l.next_idx().0));
-                    let clip = surface
-                        .shrink2(Vec2::new(3.0, 5.0))
-                        .intersect(ui.clip_rect());
+                    let clip = pill.shrink2(Vec2::new(3.0, 5.0)).intersect(ui.clip_rect());
                     self.content_motion
                         .paint_previous(ui.painter(), clip, opacity, &progress);
                     let body_rect = Rect::from_min_size(
                         Pos2::new(
                             // 26 px sides leave room for the carousel arrows.
                             (host_width - notch::OPEN_WIDTH) / 2.0 + 26.0 + progress.offset,
-                            50.0 + 6.0 * (1.0 - openness),
+                            top + 50.0 + 6.0 * (1.0 - openness),
                         ),
                         Vec2::new(notch::OPEN_WIDTH - 52.0, page_height - 62.0),
                     );
@@ -1662,11 +1724,7 @@ impl eframe::App for Cikung {
                             .id_salt("notch-body")
                             .max_rect(body_rect),
                     );
-                    body.set_clip_rect(
-                        surface
-                            .shrink2(Vec2::new(3.0, 5.0))
-                            .intersect(ui.clip_rect()),
-                    );
+                    body.set_clip_rect(pill.shrink2(Vec2::new(3.0, 5.0)).intersect(ui.clip_rect()));
                     body.multiply_opacity(opacity * progress.opacity);
                     if !self.expanded || openness <= 0.98 || progress.moving {
                         body.disable();
@@ -1678,7 +1736,7 @@ impl eframe::App for Cikung {
                         start,
                         self.artwork.as_ref().map(|(_, texture)| texture.clone()),
                     );
-                    self.carousel_arrows(ui, surface, opacity);
+                    self.carousel_arrows(ui, pill, opacity);
                 }
             });
         if inside && ctx.input(|i| i.pointer.any_click()) {
