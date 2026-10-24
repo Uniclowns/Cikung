@@ -361,32 +361,9 @@ pub fn volume(command: i32) {
         }
     }
 }
-/// Camera notch of the main Mac display as (width, height) in points; `None` without one.
-#[cfg(target_os = "macos")]
-pub fn camera_notch() -> Option<(f32, f32)> {
-    use objc2::{runtime::NSObjectProtocol, sel};
-    use objc2_app_kit::NSScreen;
-    use objc2_foundation::MainThreadMarker;
-    let screen = NSScreen::mainScreen(MainThreadMarker::new()?)?;
-    // safeAreaInsets arrived in macOS 12; the bundle still starts on 11.
-    if !screen.respondsToSelector(sel!(safeAreaInsets)) {
-        return None;
-    }
-    unsafe {
-        let top = screen.safeAreaInsets().top;
-        let width = screen.frame().size.width
-            - screen.auxiliaryTopLeftArea().size.width
-            - screen.auxiliaryTopRightArea().size.width;
-        (top > 0.0 && width > 0.0).then_some((width as f32, top as f32))
-    }
-}
-#[cfg(not(target_os = "macos"))]
-pub fn camera_notch() -> Option<(f32, f32)> {
-    None
-}
-
-/// Pins the notch window to the top centre of its Mac display, above the menu bar
-/// (like other notch apps) and on every Space, so it merges with the camera notch.
+/// Pins the notch window to the top centre of its Mac display, above the menu bar and on
+/// every Space. It is the Windows notch as is; ponytail: a MacBook camera notch hides the
+/// middle of its row, which a camera-aware layout would need wider wings to avoid.
 #[cfg(target_os = "macos")]
 pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
     use objc2_app_kit::{NSMainMenuWindowLevel, NSScreen, NSView, NSWindowCollectionBehavior};

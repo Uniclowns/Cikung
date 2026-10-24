@@ -402,8 +402,6 @@ pub struct Cikung {
     last_shape: Option<[i32; 5]>,
     /// When idle memory was last handed back during the current collapsed rest.
     last_trim: Option<f64>,
-    /// Mac camera notch (width, height): Cikung wraps around it instead of covering it.
-    pub(crate) camera_notch: Option<(f32, f32)>,
     last_anchor: Instant,
     fullscreen: bool,
     pub(crate) handle: Option<usize>,
@@ -653,7 +651,6 @@ impl Cikung {
             more_open: launch.page.as_deref() == Some("more"),
             last_shape: None,
             last_trim: None,
-            camera_notch: native::camera_notch(),
             last_anchor: Instant::now() - Duration::from_secs(2),
             fullscreen: false,
             handle: native::window_handle(cc),
@@ -1498,13 +1495,6 @@ impl eframe::App for Cikung {
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
-            } else if let Some((camera, _)) = self.camera_notch {
-                // The Windows row on the top edge, split around the camera: cat and title
-                // or lyric left of it, clock, date and music bars right of it.
-                Vec2::new(
-                    (camera + 2.0 * notch::CAMERA_WING).max(notch::COLLAPSED_LYRIC.x),
-                    notch::COLLAPSED.y,
-                )
             } else if !self.demo && self.current_lyric().is_some() {
                 notch::COLLAPSED_LYRIC
             } else {
@@ -1519,7 +1509,7 @@ impl eframe::App for Cikung {
         } else {
             size
         };
-        // macOS: AppKit places the window above the menu bar, on the camera notch.
+        // macOS: AppKit pins the window to the top centre, above the menu bar.
         #[cfg(target_os = "macos")]
         native::place_on_top(self.handle, host_size.x, host_size.y);
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
