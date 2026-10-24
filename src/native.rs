@@ -361,29 +361,12 @@ pub fn volume(command: i32) {
         }
     }
 }
-/// Height in points of the main Mac display's camera notch; `None` without one.
-#[cfg(target_os = "macos")]
-pub fn camera_notch() -> Option<f32> {
-    use objc2::{runtime::NSObjectProtocol, sel};
-    use objc2_app_kit::NSScreen;
-    use objc2_foundation::MainThreadMarker;
-    let screen = NSScreen::mainScreen(MainThreadMarker::new()?)?;
-    // safeAreaInsets arrived in macOS 12; the bundle still starts on 11.
-    if !screen.respondsToSelector(sel!(safeAreaInsets)) {
-        return None;
-    }
-    let top = unsafe { screen.safeAreaInsets().top };
-    (top > 0.0).then_some(top as f32)
-}
-#[cfg(not(target_os = "macos"))]
-pub fn camera_notch() -> Option<f32> {
-    None
-}
-
-/// Pins the notch window to the top centre of its Mac display, above the menu bar
-/// (like other notch apps) and on every Space, so it merges with the camera notch.
+/// Pins the notch window to the top centre of its Mac display, above the menu bar and on
+/// every Space. With a camera notch it hangs right below the camera, as the Windows notch
+/// hangs from the top edge; nothing is drawn beside the camera.
 #[cfg(target_os = "macos")]
 pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
+    use objc2::{runtime::NSObjectProtocol, sel};
     use objc2_app_kit::{NSMainMenuWindowLevel, NSScreen, NSView, NSWindowCollectionBehavior};
     use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
     let (Some(handle), Some(mtm)) = (handle, MainThreadMarker::new()) else {
@@ -397,6 +380,12 @@ pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
         return;
     };
     let frame = screen.frame();
+    // safeAreaInsets arrived in macOS 12 (the bundle still starts on 11); 0 without a notch.
+    let camera = if screen.respondsToSelector(sel!(safeAreaInsets)) {
+        unsafe { screen.safeAreaInsets().top }
+    } else {
+        0.0
+    };
     let (w, h) = (f64::from(width), f64::from(height));
     window.setLevel(NSMainMenuWindowLevel + 3);
     unsafe {
@@ -412,7 +401,7 @@ pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
         NSRect::new(
             NSPoint::new(
                 frame.origin.x + (frame.size.width - w) / 2.0,
-                frame.origin.y + frame.size.height - h,
+                frame.origin.y + frame.size.height - camera - h,
             ),
             NSSize::new(w, h),
         ),
