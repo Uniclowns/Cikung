@@ -9,9 +9,12 @@ pub const COLLAPSED: Vec2 = vec2(252.0, 40.0);
 pub const COLLAPSED_LYRIC: Vec2 = vec2(360.0, 40.0);
 /// Nusa's minimal notch while nothing plays: just the cat and the time.
 pub const COLLAPSED_MINIMAL: Vec2 = vec2(120.0, 32.0);
-/// Open panel width. The host is wider so the spring can overshoot without clipping.
+/// Widest the lyric pill grows to fit a long line; a longer line is cut.
+pub const LYRIC_MAX_WIDTH: f32 = 760.0;
+/// Open panel width. The host is wider than the open panel and the widest lyric pill, so
+/// the spring can overshoot without clipping.
 pub const OPEN_WIDTH: f32 = 580.0;
-pub const HOST: Vec2 = vec2(604.0, 480.0);
+pub const HOST: Vec2 = vec2(784.0, 480.0);
 /// Smallest squash the collapse undershoot may reach.
 const SQUASH: Vec2 = vec2(COLLAPSED_MINIMAL.x - 28.0, COLLAPSED_MINIMAL.y - 6.0);
 /// Underdamped spring measured from Nusa 1.0's notch: ~7% overshoot, peak after ~250 ms.

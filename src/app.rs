@@ -1600,11 +1600,25 @@ impl eframe::App for Cikung {
         } else {
             self.page.height()
         };
+        // A long synced line widens the pill to show all of it: the cat, clock, music bars
+        // and padding take 190 pt beside the 12.5 pt line (see `lyric_ticker`).
+        let lyric_width = (!self.demo && !self.expanded)
+            .then(|| self.current_lyric().map(str::to_owned))
+            .flatten()
+            .map(|line| {
+                let text = ctx.fonts_mut(|fonts| {
+                    fonts
+                        .layout_no_wrap(line, egui::FontId::proportional(12.5), Color32::WHITE)
+                        .size()
+                        .x
+                });
+                (text + 198.0).clamp(notch::COLLAPSED_LYRIC.x, notch::LYRIC_MAX_WIDTH)
+            });
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
-            } else if !self.demo && self.current_lyric().is_some() {
-                notch::COLLAPSED_LYRIC
+            } else if let Some(width) = lyric_width {
+                Vec2::new(width, notch::COLLAPSED_LYRIC.y)
             } else if self.minimal_idle() {
                 notch::COLLAPSED_MINIMAL
             } else {
