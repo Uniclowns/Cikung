@@ -12,6 +12,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,7 +28,7 @@ def info():
         "CFBundleName": "Cikung", "CFBundleDisplayName": "Cikung",
         "CFBundleIdentifier": "com.cikung.desktop", "CFBundleExecutable": "cikung",
         "CFBundleIconFile": "Cikung.icns", "CFBundlePackageType": "APPL",
-        # Notch + right-click menu only, no Dock icon (matches Windows hiding from the taskbar).
+        # Notch + menu-bar cat only, no Dock icon (matches Windows hiding from the taskbar).
         "LSUIElement": True,
         "CFBundleInfoDictionaryVersion": "6.0", "CFBundleDevelopmentRegion": "en",
         "CFBundleShortVersionString": version(), "CFBundleVersion": version(),
@@ -121,7 +122,7 @@ def build():
     validate()
     if sys.platform != "darwin":
         raise SystemExit("A Mac with Xcode Command Line Tools and Rust is required. This Windows/Linux check did not build a Mac app.")
-    for tool in ("cargo", "rustup", "xcrun", "lipo", "codesign", "ditto"):
+    for tool in ("cargo", "rustup", "xcrun", "lipo", "codesign", "ditto", "hdiutil"):
         if not shutil.which(tool):
             raise SystemExit("Missing required Mac build tool: " + tool)
     run("xcrun", "--show-sdk-path")
@@ -132,7 +133,8 @@ def build():
     output = ROOT / "dist"
     output.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="cikung-mac-", dir=output) as temp:
-        app = Path(temp) / "Cikung.app"
+        stage = Path(temp) / "Cikung"
+        app = stage / "Cikung.app"
         contents = app / "Contents"
         binary = contents / "MacOS/cikung"
         resources = contents / "Resources"
@@ -154,11 +156,25 @@ def build():
         assert "Cikung " + version() in help_text, "Mac executable smoke check failed"
         archive = Path(temp) / "Cikung-macOS-universal.zip"
         run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive))
-        final = output / archive.name
-        os.replace(archive, final)
-    digest = hashlib.sha256(final.read_bytes()).hexdigest()
-    final.with_suffix(".zip.sha256").write_text(digest + "  " + final.name + "\n")
-    print("Universal Mac app (ad-hoc signed, not notarized):", final)
+        # The disk image opens on Cikung beside an Applications link to drag it onto.
+        (stage / "Applications").symlink_to("/Applications")
+        image = Path(temp) / "Cikung-macOS-universal.dmg"
+        for attempt in range(3):
+            # ponytail: hosted Mac runners sometimes answer "Resource busy"; a short retry covers it.
+            try:
+                run("hdiutil", "create", "-volname", "Cikung", "-srcfolder", str(stage), "-ov", "-format", "UDZO", str(image))
+                break
+            except subprocess.CalledProcessError:
+                if attempt == 2:
+                    raise
+                time.sleep(5)
+        finals = [output / archive.name, output / image.name]
+        os.replace(archive, finals[0])
+        os.replace(image, finals[1])
+    for final in finals:
+        digest = hashlib.sha256(final.read_bytes()).hexdigest()
+        final.with_name(final.name + ".sha256").write_text(digest + "  " + final.name + "\n")
+        print("Universal Mac app (ad-hoc signed, not notarized):", final)
 
 
 if __name__ == "__main__":
