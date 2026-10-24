@@ -361,9 +361,9 @@ pub fn volume(command: i32) {
         }
     }
 }
-/// Camera notch of the main Mac display as (width, height) in points; `None` without one.
+/// Height in points of the main Mac display's camera notch; `None` without one.
 #[cfg(target_os = "macos")]
-pub fn camera_notch() -> Option<(f32, f32)> {
+pub fn camera_notch() -> Option<f32> {
     use objc2::{runtime::NSObjectProtocol, sel};
     use objc2_app_kit::NSScreen;
     use objc2_foundation::MainThreadMarker;
@@ -372,16 +372,11 @@ pub fn camera_notch() -> Option<(f32, f32)> {
     if !screen.respondsToSelector(sel!(safeAreaInsets)) {
         return None;
     }
-    unsafe {
-        let top = screen.safeAreaInsets().top;
-        let width = screen.frame().size.width
-            - screen.auxiliaryTopLeftArea().size.width
-            - screen.auxiliaryTopRightArea().size.width;
-        (top > 0.0 && width > 0.0).then_some((width as f32, top as f32))
-    }
+    let top = unsafe { screen.safeAreaInsets().top };
+    (top > 0.0).then_some(top as f32)
 }
 #[cfg(not(target_os = "macos"))]
-pub fn camera_notch() -> Option<(f32, f32)> {
+pub fn camera_notch() -> Option<f32> {
     None
 }
 
