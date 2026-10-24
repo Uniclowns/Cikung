@@ -87,6 +87,8 @@ This is an expanded desktop release, **not complete CouCou parity**. Native iOS/
 
 ## Version history
 
+Version 0.14.4 makes the top-row Mac notch as wide as the Windows one (360 pt): a smaller cat and the song or a scrolling lyric left of the camera, the clock, date and music bars right of it.
+
 Version 0.14.3 puts the Mac notch back on the top edge: one row split around the camera, with the cat and the song or lyric left of it and the clock, date and music bars right of it. A lyric too long for the space beside the camera scrolls to its end and back.
 
 Version 0.14.2 removes the black band above the Mac notch: the Windows notch now hangs right below the camera, and the menu bar beside the camera stays visible. On an external display without a camera notch it sits at the top edge, as on Windows.
