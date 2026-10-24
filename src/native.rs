@@ -271,6 +271,7 @@ pub fn anchor(
     let x = (base_x + horizontal_offset.round() as i32)
         .clamp(display.left, display.left + display.width - w);
     let hwnd = HWND(handle as *mut std::ffi::c_void);
+    hide_from_taskbar(hwnd);
     let mut old = RECT::default();
     // The transparent host stays fixed. Avoid redundant compositor resizes.
     unsafe {
@@ -422,6 +423,40 @@ pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
         ),
         true,
     );
+}
+
+/// Keeps the notch out of the taskbar and Alt+Tab so Cikung runs in the background
+/// (the tray icon is its way in). winit's skip-taskbar is lost when eframe first shows
+/// the window; a tool window never gets a taskbar button, however often it is shown.
+#[cfg(target_os = "windows")]
+fn hide_from_taskbar(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, IsWindowVisible, SW_HIDE, SW_SHOWNOACTIVATE,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW,
+        SetWindowPos, ShowWindow, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    };
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        let wanted = (style | WS_EX_TOOLWINDOW.0) & !WS_EX_APPWINDOW.0;
+        if style == wanted {
+            return;
+        }
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted as isize);
+        // Explorer drops an existing button only when the window is shown again.
+        if IsWindowVisible(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        }
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    }
 }
 
 /// What the Mac menu-bar icon asked for: 1 open the notch, 2 Settings, 3 quit.
