@@ -28,9 +28,19 @@ impl Access {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub enum Source {
+    WhatsApp,
+    /// Claude and Codex notify when a reply finishes in the background, where their windows
+    /// stop updating the accessibility tree the desktop-app link reads.
+    App(crate::desktop_apps::Target),
+}
+
 #[derive(Clone)]
 pub struct Message {
     key: Key,
+    pub source: Source,
     title: String,
     body: String,
 }
@@ -75,10 +85,11 @@ impl Changes {
 }
 
 #[cfg(any(windows, test))]
-fn is_whatsapp(app_id: &str, display_name: &str) -> bool {
+fn source(app_id: &str, display_name: &str) -> Option<Source> {
+    use crate::desktop_apps::Target;
     let id = app_id.to_ascii_lowercase();
     let family = id.split('!').next().unwrap_or_default();
-    matches!(
+    let whatsapp = matches!(
         family,
         "5319275a.whatsappdesktop_cv1g1gvanyjgm"
             | "5319275a.whatsappbeta_cv1g1gvanyjgm"
@@ -91,7 +102,19 @@ fn is_whatsapp(app_id: &str, display_name: &str) -> bool {
             | "whatsappdesk"
             | "whatsapp desk 2"
             | "whatsappdesk_2"
-    )
+    );
+    // The AI apps go by package identity only: "Claude" or "ChatGPT" can also be a web app.
+    if whatsapp {
+        Some(Source::WhatsApp)
+    } else if family == "claude_pzs8sxrjxfjjc"
+        || family.starts_with("com.squirrel.anthropicclaude.")
+    {
+        Some(Source::App(Target::Claude))
+    } else if family.starts_with("openai.codex_") || family.starts_with("openai.chatgpt") {
+        Some(Source::App(Target::Codex))
+    } else {
+        None
+    }
 }
 
 #[cfg(any(windows, test))]
@@ -190,13 +213,20 @@ impl Monitor {
 pub struct Probe {
     access: Access,
     whatsapp_notifications: usize,
+    ai_app_notifications: usize,
 }
 pub fn probe() -> Result<Probe, String> {
     let _apartment = platform::Apartment::new(false)?;
     let snapshot = platform::snapshot(false, None, &mut HashMap::new())?;
+    let whatsapp = snapshot
+        .items
+        .iter()
+        .filter(|m| m.source == Source::WhatsApp)
+        .count();
     Ok(Probe {
         access: snapshot.access,
-        whatsapp_notifications: snapshot.items.len(),
+        whatsapp_notifications: whatsapp,
+        ai_app_notifications: snapshot.items.len() - whatsapp,
     })
 }
 pub fn request_access(
@@ -256,7 +286,7 @@ mod platform {
     pub fn snapshot(
         preview: bool,
         seen: Option<&HashSet<Key>>,
-        apps: &mut HashMap<Key, bool>,
+        apps: &mut HashMap<Key, Option<Source>>,
     ) -> Result<Snapshot, String> {
         let listener = UserNotificationListener::Current().map_err(error)?;
         let status = access(listener.GetAccessStatus().map_err(error)?);
@@ -281,7 +311,7 @@ mod platform {
                     notification.CreationTime()?.UniversalTime,
                 );
                 current.insert(key);
-                let whatsapp = match apps.get(&key) {
+                let source = match apps.get(&key) {
                     Some(&known) => known,
                     None => {
                         let info = notification.AppInfo()?;
@@ -291,20 +321,23 @@ mod platform {
                             .and_then(|d| d.DisplayName())
                             .map(|n| n.to_string())
                             .unwrap_or_default();
-                        let known = is_whatsapp(&app_id, &name);
+                        let known = super::source(&app_id, &name);
                         apps.insert(key, known);
                         known
                     }
                 };
-                if !whatsapp {
+                let Some(source) = source else {
                     return Ok(None);
-                }
+                };
                 let mut message = Message {
                     key,
+                    source,
                     title: String::new(),
                     body: String::new(),
                 };
+                // Only WhatsApp's text is mirrored; an AI app's notification just marks a reply.
                 if preview
+                    && source == Source::WhatsApp
                     && seen.is_some_and(|seen| !seen.contains(&key))
                     && let Ok(text) = notification
                         .Notification()
@@ -385,7 +418,7 @@ mod platform {
     pub fn snapshot(
         _: bool,
         _: Option<&HashSet<Key>>,
-        _: &mut HashMap<Key, bool>,
+        _: &mut HashMap<Key, Option<Source>>,
     ) -> Result<Snapshot, String> {
         Err("WhatsApp notifications currently require Windows.".into())
     }
@@ -409,6 +442,7 @@ mod tests {
                 .iter()
                 .map(|&key| Message {
                     key,
+                    source: Source::WhatsApp,
                     title: "A sender".into(),
                     body: "A message".into(),
                 })
@@ -436,20 +470,33 @@ mod tests {
     }
     #[test]
     fn filtering_uses_app_identity_instead_of_message_content() {
-        assert!(is_whatsapp(
-            "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App",
-            ""
-        ));
-        assert!(is_whatsapp("portable.app", "WhatsApp Desk"));
-        assert!(is_whatsapp("portable.app", "WhatsAppDesk_2"));
-        assert!(!is_whatsapp("com.cikung.desktop", "Cikung"));
-        assert!(!is_whatsapp("chrome", "Google Chrome"));
-        assert!(!is_whatsapp("not-whatsapp", "WhatsApp backup"));
+        use crate::desktop_apps::Target;
+        let whatsapp = Some(Source::WhatsApp);
+        assert_eq!(
+            source("5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App", ""),
+            whatsapp
+        );
+        assert_eq!(source("portable.app", "WhatsApp Desk"), whatsapp);
+        assert_eq!(source("portable.app", "WhatsAppDesk_2"), whatsapp);
+        assert_eq!(source("com.cikung.desktop", "Cikung"), None);
+        assert_eq!(source("chrome", "Google Chrome"), None);
+        assert_eq!(source("not-whatsapp", "WhatsApp backup"), None);
+        assert_eq!(
+            source("Claude_pzs8sxrjxfjjc!Claude", "Claude"),
+            Some(Source::App(Target::Claude))
+        );
+        assert_eq!(
+            source("OpenAI.Codex_2p2nqsd0c76g0!App", "ChatGPT"),
+            Some(Source::App(Target::Codex))
+        );
+        // A browser web app with the same name is not the desktop app.
+        assert_eq!(source("msedge.claude.ai", "Claude"), None);
     }
     #[test]
     fn hidden_previews_never_reveal_sender_or_body_and_text_is_bounded() {
         let message = Message {
             key: (1, 1),
+            source: Source::WhatsApp,
             title: "Sender".into(),
             body: "Private body".into(),
         };

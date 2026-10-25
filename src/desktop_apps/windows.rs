@@ -17,8 +17,8 @@ use ::windows::{
             Accessibility::*,
             Shell::ShellExecuteW,
             WindowsAndMessaging::{
-                EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SW_RESTORE,
-                SW_SHOWNORMAL, SetForegroundWindow, ShowWindow,
+                EnumWindows, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+                IsWindowVisible, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow, ShowWindow,
             },
         },
     },
@@ -87,6 +87,9 @@ unsafe extern "system" fn find_window(window: HWND, data: LPARAM) -> BOOL {
         return BOOL(0);
     }
     BOOL(1)
+}
+pub(super) fn foreground(hwnd: usize) -> bool {
+    unsafe { GetForegroundWindow() }.0 as usize == hwnd
 }
 fn window(target: Target) -> Option<(usize, u32, String)> {
     let mut search = Find {

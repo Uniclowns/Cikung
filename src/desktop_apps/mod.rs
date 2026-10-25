@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{self, Receiver, Sender};
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "windows")]
+use windows::foreground;
+#[cfg(not(target_os = "windows"))]
+fn foreground(_: usize) -> bool {
+    false
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Target {
@@ -154,6 +160,8 @@ pub struct Manager {
     resting: bool,
     completion: [Completion; 2],
     completed: Vec<Target>,
+    /// A Windows notification already announced this reply.
+    notified: [bool; 2],
 }
 impl Manager {
     pub fn new(ctx: eframe::egui::Context, active: bool, enabled: [bool; 2]) -> Self {
@@ -203,7 +211,23 @@ impl Manager {
             resting: false,
             completion: Default::default(),
             completed: vec![],
+            notified: [false; 2],
         }
+    }
+    /// The app posted a Windows notification, as it does when a reply finishes while it is in
+    /// the background. Its window stops updating there, so the accessibility read would only
+    /// see the end once the user comes back: announce now and skip that late completion.
+    pub fn notified(&mut self, target: Target) {
+        let index = target.index();
+        if !self.enabled[index] {
+            return;
+        }
+        self.completed.push(target);
+        // In front, the window keeps updating, so the notification is about another chat
+        // (a parallel session) and this chat's own completion must still be announced.
+        self.notified[index] = !self.apps[index]
+            .binding
+            .is_some_and(|binding| foreground(binding.hwnd));
     }
     pub fn configure(&mut self, enabled: [bool; 2]) {
         if enabled != self.enabled {
@@ -235,7 +259,13 @@ impl Manager {
                 Event::Snapshot(apps) => {
                     for app in apps.iter() {
                         let index = app.target.index();
-                        if self.completion[index].observe(app, self.enabled[index]) {
+                        // A new reply starts: an earlier notification no longer covers it.
+                        if app.state == State::Working && self.apps[index].state != State::Working {
+                            self.notified[index] = false;
+                        }
+                        if self.completion[index].observe(app, self.enabled[index])
+                            && !std::mem::take(&mut self.notified[index])
+                        {
                             self.completed.push(app.target);
                         }
                     }
@@ -467,6 +497,37 @@ mod tests {
         assert!(manager.take_completions().is_empty());
         manager.completed.push(Target::Claude);
         manager.configure([false, true]);
+        assert!(manager.take_completions().is_empty());
+    }
+    #[test]
+    fn a_background_notification_announces_once_and_the_next_reply_still_counts() {
+        let mut manager = Manager::new(eframe::egui::Context::default(), false, [true; 2]);
+        let (tx, rx) = mpsc::channel();
+        manager.rx = rx;
+        let send = |state| {
+            tx.send(Event::Snapshot(Box::new([
+                AppSnapshot::empty(Target::Claude, State::Closed, ""),
+                completion_snapshot(state, 1),
+            ])))
+            .unwrap();
+        };
+        send(State::Working);
+        manager.poll();
+        manager.notified(Target::Codex);
+        assert_eq!(manager.take_completions(), vec![Target::Codex]);
+        // Back in front, the window catches up: that late completion stays quiet.
+        send(State::Ready);
+        send(State::Ready);
+        manager.poll();
+        assert!(manager.take_completions().is_empty());
+        send(State::Working);
+        send(State::Ready);
+        send(State::Ready);
+        manager.poll();
+        assert_eq!(manager.take_completions(), vec![Target::Codex]);
+        // A paused link ignores the app's notifications.
+        manager.configure([true, false]);
+        manager.notified(Target::Codex);
         assert!(manager.take_completions().is_empty());
     }
     #[test]

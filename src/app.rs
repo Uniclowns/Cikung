@@ -983,21 +983,25 @@ impl Cikung {
         }
     }
     fn tick(&mut self, ctx: &egui::Context) {
-        let whatsapp_enabled = self.prefs.whatsapp_notifications
+        // One Windows notification reader serves WhatsApp and the AI apps' finished replies.
+        let listening = (self.prefs.whatsapp_notifications
+            || self.prefs.desktop_apps.enabled.contains(&true))
             && cfg!(windows)
             && !self.demo
             && self.capture.is_none()
             && self.audit.is_none();
-        if !whatsapp_enabled
+        if !listening
             || self
                 .whatsapp
                 .as_ref()
                 .is_some_and(|m| m.preview != self.prefs.whatsapp_preview)
         {
             self.whatsapp = None;
+        }
+        if !self.prefs.whatsapp_notifications || self.whatsapp.is_none() {
             self.notices.retain(|n| n.title != "WhatsApp");
         }
-        if whatsapp_enabled && self.whatsapp.is_none() {
+        if listening && self.whatsapp.is_none() {
             self.whatsapp = Some(crate::whatsapp::Monitor::start(
                 ctx.clone(),
                 self.prefs.whatsapp_preview,
@@ -1022,8 +1026,14 @@ impl Cikung {
         }
         let messages = self.whatsapp.as_mut().map(|m| m.poll()).unwrap_or_default();
         for message in messages {
-            // Mirror only in Cikung, without sending another Windows notification.
-            self.toast("WhatsApp", message.text(self.prefs.whatsapp_preview));
+            match message.source {
+                // Mirror only in Cikung, without sending another Windows notification.
+                crate::whatsapp::Source::WhatsApp if self.prefs.whatsapp_notifications => {
+                    self.toast("WhatsApp", message.text(self.prefs.whatsapp_preview));
+                }
+                crate::whatsapp::Source::WhatsApp => {}
+                crate::whatsapp::Source::App(target) => self.desktop_manager.notified(target),
+            }
         }
 
         let bluetooth_enabled = self.prefs.bluetooth_notifications
