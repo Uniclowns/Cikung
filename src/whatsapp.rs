@@ -303,6 +303,7 @@ mod platform {
             .map_err(error)?;
         let mut items = Vec::new();
         let mut current = HashSet::new();
+        let mut desk = None;
         for notification in notifications {
             // A dismissed or malformed notification must not prevent processing the others.
             let mut read = || -> windows::core::Result<Option<Message>> {
@@ -314,14 +315,27 @@ mod platform {
                 let source = match apps.get(&key) {
                     Some(&known) => known,
                     None => {
-                        let info = notification.AppInfo()?;
-                        let app_id = info.AppUserModelId()?.to_string();
-                        let name = info
-                            .DisplayInfo()
-                            .and_then(|d| d.DisplayName())
-                            .map(|n| n.to_string())
+                        let (app_id, name) = notification
+                            .AppInfo()
+                            .and_then(|info| {
+                                let name = info
+                                    .DisplayInfo()
+                                    .and_then(|d| d.DisplayName())
+                                    .map(|n| n.to_string())
+                                    .unwrap_or_default();
+                                Ok((info.AppUserModelId()?.to_string(), name))
+                            })
                             .unwrap_or_default();
-                        let known = super::source(&app_id, &name);
+                        // A portable WhatsApp Desk posts under an app ID no shortcut registers,
+                        // so Windows names no app at all. Credit those to it while it runs.
+                        // ponytail: another unregistered app's notification in that time would
+                        // pass as WhatsApp too; tell them apart if one ever shows up.
+                        let known = if app_id.is_empty() {
+                            (*desk.get_or_insert_with(whatsapp_desk_running))
+                                .then_some(Source::WhatsApp)
+                        } else {
+                            super::source(&app_id, &name)
+                        };
                         apps.insert(key, known);
                         known
                     }
@@ -365,6 +379,36 @@ mod platform {
             access: status,
             items,
         })
+    }
+    /// Whether a WhatsApp Desk process runs, by executable name ("WhatsAppDesk_2.exe").
+    fn whatsapp_desk_running() -> bool {
+        use windows::Win32::{
+            Foundation::CloseHandle,
+            System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            },
+        };
+        unsafe {
+            let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+                return false;
+            };
+            let mut entry = PROCESSENTRY32W {
+                dwSize: size_of::<PROCESSENTRY32W>() as u32,
+                ..Default::default()
+            };
+            let mut found = false;
+            let mut more = Process32FirstW(snapshot, &mut entry).is_ok();
+            while more && !found {
+                let name = &entry.szExeFile;
+                let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                let exe = String::from_utf16_lossy(&name[..end]).to_ascii_lowercase();
+                found = exe.starts_with("whatsappdesk") || exe.starts_with("whatsapp desk");
+                more = Process32NextW(snapshot, &mut entry).is_ok();
+            }
+            let _ = CloseHandle(snapshot);
+            found
+        }
     }
     pub fn request_access(
         ctx: eframe::egui::Context,
