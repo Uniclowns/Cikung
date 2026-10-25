@@ -287,6 +287,8 @@ pub(crate) struct Preferences {
     pub minimal_notch: bool,
     /// Minutes between Cikung's visits in the notch; 0 is off (see `visits::VISIT_MINUTES`).
     pub cat_visit_minutes: u32,
+    /// Pages left out of the page dots and the all-tools grid (Settings → General).
+    pub hidden_pages: Vec<Page>,
     /// Tasks with a due time go to Google Calendar once Google is connected.
     pub calendar_sync: bool,
     pub whatsapp_notifications: bool,
@@ -335,6 +337,7 @@ impl Default for Preferences {
             system_notices: true,
             minimal_notch: true,
             cat_visit_minutes: 15,
+            hidden_pages: Vec::new(),
             calendar_sync: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,

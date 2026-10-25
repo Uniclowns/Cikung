@@ -336,16 +336,25 @@ impl Cikung {
         }
     }
 
-    /// Carousel position: each `Page::CAROUSEL` page, then the all-tools grid last.
+    /// The carousel's pages, without the ones turned off in Settings → General.
+    fn carousel(&self) -> Vec<Page> {
+        Page::CAROUSEL
+            .into_iter()
+            .filter(|page| !self.prefs.hidden_pages.contains(page))
+            .collect()
+    }
+
+    /// Carousel position: each carousel page, then the all-tools grid last.
     fn carousel_index(&self) -> Option<usize> {
+        let pages = self.carousel();
         if self.more_open {
-            return Some(Page::CAROUSEL.len());
+            return Some(pages.len());
         }
-        Page::CAROUSEL.iter().position(|page| *page == self.page)
+        pages.iter().position(|page| *page == self.page)
     }
 
     fn show_carousel(&mut self, index: usize) {
-        if let Some(page) = Page::CAROUSEL.get(index) {
+        if let Some(page) = self.carousel().get(index) {
             self.navigate(*page);
         } else {
             self.more_open = true;
@@ -357,7 +366,8 @@ impl Cikung {
     /// glides between the dots, each dot widening as it arrives; the mouse wheel over the
     /// strip flips pages.
     fn page_indicator(&mut self, ui: &mut egui::Ui, center: Pos2, opacity: f32, interactive: bool) {
-        let count = Page::CAROUSEL.len() + 1;
+        let pages = self.carousel();
+        let count = pages.len() + 1;
         let spacing = 12.0;
         let left = center.x - spacing * (count as f32 - 1.0) / 2.0;
         let glide = if self.prefs.reduced_motion { 0.0 } else { 0.32 };
@@ -380,7 +390,7 @@ impl Cikung {
             if !interactive {
                 continue;
             }
-            let (main, accent, _) = page_title(Page::CAROUSEL.get(index).copied());
+            let (main, accent, _) = page_title(pages.get(index).copied());
             if ui
                 .interact(hit, ui.id().with(("page-dot", index)), Sense::click())
                 .on_hover_text(format!("{main} {accent}"))
@@ -409,7 +419,7 @@ impl Cikung {
 
     /// Next/previous carousel page, wrapping; pages outside it enter at either end.
     pub(super) fn step_page(&mut self, delta: isize) {
-        let len = Page::CAROUSEL.len() as isize + 1;
+        let len = self.carousel().len() as isize + 1;
         let next = match self.carousel_index() {
             Some(index) => (index as isize + delta).rem_euclid(len),
             None if delta > 0 => 0,
@@ -482,22 +492,10 @@ impl Cikung {
                 .color(muted()),
         );
         ui.add_space(12.0);
-        let tools = [
-            (Page::Music, "What's playing"),
-            (Page::Focus, "Pomodoro sessions"),
-            (Page::Water, "Time for a sip"),
-            (Page::Files, "Keep files nearby"),
-            (Page::Tasks, "One thing at a time"),
-            (Page::Notes, "Capture and remember"),
-            (Page::Agents, "Claude and Codex"),
-            (Page::Lyrics, "Follow the words"),
-            (Page::Chat, "Ask Cikung"),
-            (Page::Game, "A hint for your adventure"),
-            (Page::Services, "Connected accounts"),
-            (Page::Phone, "Pair your phone"),
-            (Page::Overview, "Your little team"),
-            (Page::Style, "Meet your cats"),
-        ];
+        let tools: Vec<_> = TOOLS
+            .into_iter()
+            .filter(|(page, _)| !self.prefs.hidden_pages.contains(page))
+            .collect();
         let width = (ui.available_width() - 10.0) / 2.0;
         for row in tools.chunks(2) {
             ui.horizontal(|ui| {
@@ -517,6 +515,24 @@ impl Cikung {
         }
     }
 }
+
+/// Every tool page with its caption, for the all-tools grid and the Settings switches.
+pub(super) const TOOLS: [(Page, &str); 14] = [
+    (Page::Music, "What's playing"),
+    (Page::Focus, "Pomodoro sessions"),
+    (Page::Water, "Time for a sip"),
+    (Page::Files, "Keep files nearby"),
+    (Page::Tasks, "One thing at a time"),
+    (Page::Notes, "Capture and remember"),
+    (Page::Agents, "Claude and Codex"),
+    (Page::Lyrics, "Follow the words"),
+    (Page::Chat, "Ask Cikung"),
+    (Page::Game, "A hint for your adventure"),
+    (Page::Services, "Connected accounts"),
+    (Page::Phone, "Pair your phone"),
+    (Page::Overview, "Your little team"),
+    (Page::Style, "Meet your cats"),
+];
 
 /// Eases out (cubic) over `seconds` from the value shown when `target` last changed.
 fn ease_toward(ctx: &egui::Context, id: egui::Id, target: f32, seconds: f64) -> f32 {
@@ -711,5 +727,25 @@ mod date_tests {
         assert_eq!(date_time(&after), ("00:00".into(), "Jum, 23 Okt".into()));
         let year = zone.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap();
         assert_eq!(date_time(&year), ("00:00".into(), "Jum, 1 Jan".into()));
+    }
+}
+
+#[cfg(test)]
+mod carousel_tests {
+    use super::*;
+
+    #[test]
+    fn pages_turned_off_leave_the_dots_and_the_grid() {
+        let (_, mut app) = super::super::tests::app();
+        let full = app.carousel().len();
+        app.prefs.hidden_pages = vec![Page::Water, Page::Chat];
+        assert_eq!(app.carousel().len(), full - 1);
+        assert!(!app.carousel().contains(&Page::Water));
+        // Stepping past the last page lands on the all-tools grid, then wraps.
+        app.navigate(*app.carousel().last().unwrap());
+        app.step_page(1);
+        assert!(app.more_open);
+        app.step_page(1);
+        assert_eq!(app.page, app.carousel()[0]);
     }
 }

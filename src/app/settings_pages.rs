@@ -127,6 +127,26 @@ impl Cikung {
         card(ui, |ui| {
             heading(
                 ui,
+                "Features in your notch",
+                "Turn off what you don't use: it leaves the page dots and the all-tools grid.",
+            );
+            for (page, caption) in super::notch_ui::TOOLS {
+                let mut shown = !self.prefs.hidden_pages.contains(&page);
+                if ui
+                    .checkbox(&mut shown, format!("{} · {caption}", page.label()))
+                    .changed()
+                {
+                    if shown {
+                        self.prefs.hidden_pages.retain(|hidden| *hidden != page);
+                    } else {
+                        self.prefs.hidden_pages.push(page);
+                    }
+                }
+            }
+        });
+        card(ui, |ui| {
+            heading(
+                ui,
                 "At home in your notch",
                 "A small companion at the top of your screen.",
             );
