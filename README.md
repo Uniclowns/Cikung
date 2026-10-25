@@ -45,7 +45,7 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 | Tasks | Persistent tasks, completion, editing and optional local due reminders while Cikung runs. |
 | Water | Opt-in reminders, bottle volume, daily ml goal, active hours, snooze, drink count, an hourly chart of today's drinks (as in Nusa) and recent daily totals. |
 | Notes | Local notes, imports/export, explicit Windows microphone + PC-audio recording, dictation, transcription, AI summaries and marked action-item extraction. |
-| Agents | Claude App and Codex / ChatGPT App desktop status, visible conversation and explicit Send to active chat on Windows; Oh My Pi retains its connected terminal integration. |
+| Agents | Claude App and Codex / ChatGPT App desktop status, visible conversation and explicit Send to active chat on Windows; a reply that finishes while the app is in the background is announced from the app's own Windows notification. Oh My Pi retains its connected terminal integration. |
 | Chat | OpenAI, Anthropic, Gemini, DeepSeek, Qwen, Moonshot/Kimi, Ollama and LM Studio. |
 | Services | Read-only GitHub, Stripe, Vercel, Resend, Notion, Cal.com and n8n account/status clients. |
 | Phone | Opt-in same-Wi-Fi browser companion, QR pairing, agent activity/diffs/approvals, media controls and revocation. |
