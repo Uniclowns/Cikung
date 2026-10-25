@@ -88,6 +88,8 @@ This is an expanded desktop release, **not complete CouCou parity**. Native iOS/
 
 ## Version history
 
+Version 0.15.0 brings Nusa-style notices to the notch: battery, internet, Caps Lock and an animated volume HUD. Claude and Codex replies are announced within seconds, even while the app is in the background, and WhatsApp (including WhatsApp Desk) shows as "Sender: message" or "Group - Sender: message" in a pill that fits it. The chat assistant proposes tasks, and tasks with a due time sync to Google Calendar ([guide](docs/google-calendar.md)). Cikung drops by every few minutes, Ctrl+Alt+H hides the notch for games, pages can be switched off, a Glass theme joins the others, the page dots glide and follow the mouse wheel, and a new song's lyrics appear without a click.
+
 Version 0.14.5 draws the Mac notch exactly like the Windows one, at the top centre: the cat, song or lyric, clock and date, and music bars in one row at the Windows sizes. On a MacBook's own screen the camera covers the middle of that row.
 
 Version 0.14.4 makes the top-row Mac notch as wide as the Windows one (360 pt): a smaller cat and the song or a scrolling lyric left of the camera, the clock, date and music bars right of it.
