@@ -620,6 +620,23 @@ impl Cikung {
                         &mut self.prefs.whatsapp_preview,
                         "Show sender and message preview",
                     );
+                    // The pill grows with the message up to this width; longer ones are cut.
+                    ui.horizontal(|ui| {
+                        ui.label("Widest message");
+                        let width = self.prefs.whatsapp_width;
+                        egui::ComboBox::from_id_salt("whatsapp-width")
+                            .selected_text(
+                                notch::MESSAGE_WIDTHS
+                                    .iter()
+                                    .find(|(w, _)| *w == width)
+                                    .map_or_else(|| format!("{width:.0}"), |(_, n)| (*n).into()),
+                            )
+                            .show_ui(ui, |ui| {
+                                for (w, name) in notch::MESSAGE_WIDTHS {
+                                    ui.selectable_value(&mut self.prefs.whatsapp_width, w, name);
+                                }
+                            });
+                    });
                 });
             });
             ui.add_space(10.0);

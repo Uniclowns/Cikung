@@ -77,7 +77,7 @@ impl Cikung {
             let title = if self.file_hover.is_some() {
                 "Release to keep files".to_owned()
             } else if let Some(notice) = notice {
-                if notice.title.starts_with("WhatsApp") {
+                if notice.title == "WhatsApp test" {
                     format!("{} · {}", notice.title, notice.text)
                 } else {
                     notice.text.clone()
@@ -106,6 +106,12 @@ impl Cikung {
                 && !self.demo)
                 .then(|| self.current_lyric().map(str::to_owned))
                 .flatten();
+            // A WhatsApp message rides the lyric ticker, so the pill widening to fit it reveals
+            // the line instead of re-cutting it every frame.
+            let lyric = notice
+                .filter(|n| n.title == "WhatsApp" && !show_actions && self.file_hover.is_none())
+                .map(|n| n.text.clone())
+                .or(lyric);
             let reduced = self.prefs.reduced_motion;
             // Open with nothing more urgent to say: Nusa-style two-tone page title.
             let heading = title

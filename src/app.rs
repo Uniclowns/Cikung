@@ -285,6 +285,8 @@ pub(crate) struct Preferences {
     pub minimal_notch: bool,
     pub whatsapp_notifications: bool,
     pub whatsapp_preview: bool,
+    /// Widest a WhatsApp message widens the collapsed pill (see `notch::MESSAGE_WIDTHS`).
+    pub whatsapp_width: f32,
     pub agent_completion_sound: bool,
     pub agent_completion_volume: u8,
     pub auto_collapse: bool,
@@ -326,6 +328,7 @@ impl Default for Preferences {
             minimal_notch: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,
+            whatsapp_width: 520.0,
             agent_completion_sound: true,
             agent_completion_volume: 100,
             auto_collapse: true,
@@ -1622,28 +1625,44 @@ impl eframe::App for Cikung {
         } else {
             self.page.height()
         };
-        // A long synced line widens the pill to show all of it: the cat, clock, music bars
-        // and padding take 190 pt beside the 12.5 pt line (see `lyric_ticker`).
+        // A long synced line or WhatsApp message widens the pill to show all of it: the cat,
+        // clock, music bars and padding take 190 pt beside the 12.5 pt line (see
+        // `lyric_ticker`).
+        let fit = |line: String, min: f32, max: f32| {
+            let text = ctx.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(line, egui::FontId::proportional(12.5), Color32::WHITE)
+                    .size()
+                    .x
+            });
+            (text + 198.0).clamp(min, max.max(min))
+        };
+        let message_width = (!self.expanded)
+            .then(|| self.header_notice().filter(|n| n.title == "WhatsApp"))
+            .flatten()
+            .map(|n| {
+                fit(
+                    n.text.clone(),
+                    notch::COLLAPSED.x,
+                    self.prefs.whatsapp_width,
+                )
+            });
         let lyric_width = (!self.demo && !self.expanded)
             .then(|| self.current_lyric().map(str::to_owned))
             .flatten()
-            .map(|line| {
-                let text = ctx.fonts_mut(|fonts| {
-                    fonts
-                        .layout_no_wrap(line, egui::FontId::proportional(12.5), Color32::WHITE)
-                        .size()
-                        .x
-                });
-                (text + 198.0).clamp(notch::COLLAPSED_LYRIC.x, notch::LYRIC_MAX_WIDTH)
-            });
+            .map(|line| fit(line, notch::COLLAPSED_LYRIC.x, notch::LYRIC_MAX_WIDTH));
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
             } else if self.minimal_idle() {
                 // Same order as `header`: paused music shows the minimal pill, not the lyric.
                 notch::COLLAPSED_MINIMAL
-            } else if let Some(width) = lyric_width.filter(|_| self.volume_hud_level().is_none()) {
-                // The volume HUD keeps the standard pill so its bar stays a sensible length.
+            } else if let Some(width) = message_width
+                .or(lyric_width)
+                .filter(|_| self.volume_hud_level().is_none())
+            {
+                // Same order as `header`: a message shows over the lyric. The volume HUD
+                // keeps the standard pill so its bar stays a sensible length.
                 Vec2::new(width, notch::COLLAPSED_LYRIC.y)
             } else {
                 notch::COLLAPSED

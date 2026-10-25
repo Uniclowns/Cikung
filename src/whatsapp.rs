@@ -46,15 +46,29 @@ pub struct Message {
 }
 impl Message {
     pub fn text(&self, preview: bool) -> String {
-        if !preview {
-            return "New notification".into();
+        let line = line(&self.title, &self.body);
+        if !preview || line.is_empty() {
+            return "New WhatsApp message".into();
         }
-        match (self.title.is_empty(), self.body.is_empty()) {
-            (false, false) => format!("{} · {}", self.title, self.body),
-            (false, true) => self.title.clone(),
-            (true, false) => self.body.clone(),
-            (true, true) => "New notification".into(),
-        }
+        line
+    }
+}
+
+/// "Sender: message", or "Group - Sender: message". WhatsApp titles a group alert with the
+/// group's name over "Sender\u{200e}: message"; anything before the sender, such as
+/// "Replied to you: ", is dropped.
+fn line(title: &str, body: &str) -> String {
+    let tidy = |s: &str| s.replace(['\u{200e}', '\u{200f}'], "").trim().to_owned();
+    let title = tidy(title);
+    if let Some((sender, message)) = body.split_once("\u{200e}:") {
+        let sender = sender.rsplit(": ").next().unwrap_or(sender);
+        return format!("{title} - {}: {}", tidy(sender), tidy(message));
+    }
+    let body = tidy(body);
+    match (title.is_empty(), body.is_empty()) {
+        (false, false) => format!("{title}: {body}"),
+        (false, true) => title,
+        _ => body,
     }
 }
 
@@ -544,8 +558,22 @@ mod tests {
             title: "Sender".into(),
             body: "Private body".into(),
         };
-        assert_eq!(message.text(false), "New notification");
-        assert_eq!(message.text(true), "Sender · Private body");
+        assert_eq!(message.text(false), "New WhatsApp message");
+        assert_eq!(message.text(true), "Sender: Private body");
+        assert_eq!(
+            line(
+                "Family 🌳",
+                "Replied to you: ~ Budi\u{200e}: on my way\u{200e}"
+            ),
+            "Family 🌳 - ~ Budi: on my way"
+        );
+        assert_eq!(
+            line("Family", "Ana\u{200e}: see: here"),
+            "Family - Ana: see: here"
+        );
+        // A personal message keeps its own colons.
+        assert_eq!(line("Ana", "note: buy milk"), "Ana: note: buy milk");
+        assert_eq!(line("", ""), "");
         assert_eq!(clean("  hello\nworld\0  ", 100), "hello world");
         assert_eq!(clean(&"猫".repeat(1000), 240).chars().count(), 240);
     }

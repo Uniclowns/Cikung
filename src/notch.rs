@@ -11,6 +11,13 @@ pub const COLLAPSED_LYRIC: Vec2 = vec2(360.0, 40.0);
 pub const COLLAPSED_MINIMAL: Vec2 = vec2(120.0, 32.0);
 /// Widest the lyric pill grows to fit a long line; a longer line is cut.
 pub const LYRIC_MAX_WIDTH: f32 = 760.0;
+/// Widths a WhatsApp message may widen the pill to, chosen in Settings → Notifications.
+pub const MESSAGE_WIDTHS: [(f32, &str); 4] = [
+    (400.0, "Compact · 400"),
+    (520.0, "Medium · 520"),
+    (640.0, "Wide · 640"),
+    (LYRIC_MAX_WIDTH, "Widest · 760"),
+];
 /// Open panel width. The host is wider than the open panel and the widest lyric pill, so
 /// the spring can overshoot without clipping.
 pub const OPEN_WIDTH: f32 = 580.0;
