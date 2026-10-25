@@ -11,6 +11,7 @@ use ::windows::{
                 OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
                 QueryFullProcessImageNameW,
             },
+            Variant::VARIANT,
         },
         UI::{
             Accessibility::*,
@@ -342,6 +343,50 @@ fn capture_window(
         composer,
     })
 }
+/// Whether the window still shows a Stop button. The app searches its own tree (~30 ms)
+/// instead of Cikung reading every element across processes (~0.8 s for Claude).
+fn stop_visible(hwnd: usize, automation: &IUIAutomation) -> Result<bool, String> {
+    unsafe {
+        let root = automation
+            .ElementFromHandle(HWND(hwnd as *mut c_void))
+            .map_err(error)?;
+        let names = STOP_NAMES
+            .iter()
+            .map(|name| {
+                automation
+                    .CreatePropertyConditionEx(
+                        UIA_NamePropertyId,
+                        &VARIANT::from(*name),
+                        PropertyConditionFlags_IgnoreCase,
+                    )
+                    .map(Some)
+            })
+            .collect::<::windows::core::Result<Vec<_>>>()
+            .map_err(error)?;
+        let condition = automation
+            .CreateAndConditionFromNativeArray(&[
+                Some(
+                    automation
+                        .CreatePropertyCondition(
+                            UIA_ControlTypePropertyId,
+                            &VARIANT::from(UIA_ButtonControlTypeId.0),
+                        )
+                        .map_err(error)?,
+                ),
+                Some(
+                    automation
+                        .CreateOrConditionFromNativeArray(&names)
+                        .map_err(error)?,
+                ),
+            ])
+            .map_err(error)?;
+        let found = root
+            .FindAll(TreeScope_Descendants, &condition)
+            .map_err(error)?;
+        let count = found.Length().map_err(error)?;
+        Ok((0..count).any(|i| found.GetElement(i).is_ok_and(|e| visible(&e))))
+    }
+}
 fn open(target: Target) -> Result<(), String> {
     if let Some((hwnd, _, _)) = window(target) {
         unsafe {
@@ -484,8 +529,15 @@ pub(super) fn run(
             let _ = timeout.SetTransactionTimeout(1200);
         }
     }
+    const HURRY: Duration = Duration::from_millis(500);
     let mut last = Instant::now() - Duration::from_secs(10);
     let mut interval = Duration::from_secs(2);
+    // Windows last seen working. A finished reply needs two matching ready snapshots; at the
+    // resting pace that took 6–12 s. While a reply streams, its Stop button is checked every
+    // half second, and once it is gone the app is read at once and again a second later.
+    let mut working: [Option<usize>; 2] = [None; 2];
+    let mut checked = Instant::now();
+    let mut hurry_until = Instant::now();
     loop {
         match commands.recv_timeout(Duration::from_millis(250)) {
             Ok(Command::Quit) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -513,7 +565,22 @@ pub(super) fn run(
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
-        if last.elapsed() >= interval {
+        if working.iter().any(Option::is_some) && checked.elapsed() >= HURRY {
+            checked = Instant::now();
+            if working
+                .iter()
+                .flatten()
+                .any(|&hwnd| !stop_visible(hwnd, &automation).unwrap_or(false))
+            {
+                last = Instant::now() - Duration::from_secs(10);
+            }
+        }
+        let pace = if Instant::now() < hurry_until {
+            Duration::from_secs(1)
+        } else {
+            interval
+        };
+        if last.elapsed() >= pace {
             let apps = Target::ALL.map(|target| {
                 if enabled[target.index()] {
                     capture(target, &automation)
@@ -527,6 +594,17 @@ pub(super) fn run(
                     )
                 }
             });
+            for app in &apps {
+                let index = app.target.index();
+                let was_working = working[index].is_some();
+                working[index] = app
+                    .binding
+                    .filter(|_| app.state == State::Working)
+                    .map(|b| b.hwnd);
+                if was_working && working[index].is_none() {
+                    hurry_until = Instant::now() + Duration::from_secs(5);
+                }
+            }
             if events.send(Event::Snapshot(Box::new(apps))).is_err() {
                 break;
             }

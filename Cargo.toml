@@ -21,7 +21,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 rfd = "0.15"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = ["ApplicationModel", "UI_Notifications_Management", "Foundation", "Foundation_Collections", "Devices_Bluetooth", "Devices_Enumeration", "Globalization", "Media", "Media_Control", "Media_Playback", "Media_Core", "Media_SpeechRecognition", "Networking_Connectivity", "Storage", "Storage_Streams", "Win32_System_WinRT", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_Power", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_System_Com", "Win32_System_Ole", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
+windows = { version = "0.62", features = ["ApplicationModel", "UI_Notifications_Management", "Foundation", "Foundation_Collections", "Devices_Bluetooth", "Devices_Enumeration", "Globalization", "Media", "Media_Control", "Media_Playback", "Media_Core", "Media_SpeechRecognition", "Networking_Connectivity", "Storage", "Storage_Streams", "Win32_System_WinRT", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_Power", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
 keyring = { version = "3", features = ["windows-native"] }
 wasapi = "0.22"
 hound = "3.5"

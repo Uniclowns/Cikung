@@ -1,5 +1,9 @@
 //! Read-only Windows notifications. Message contents never leave this monitor and the notch.
-use std::{collections::HashSet, sync::mpsc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::mpsc,
+    time::Duration,
+};
 
 type Key = (u32, i64);
 
@@ -129,11 +133,12 @@ impl Monitor {
             .spawn(move || {
                 let apartment = platform::Apartment::new(false);
                 let mut changes = Changes::default();
+                // Which app posted each notification, so a poll reads app info only for new ones.
+                let mut apps = HashMap::new();
                 loop {
-                    let result = apartment
-                        .as_ref()
-                        .map_err(Clone::clone)
-                        .and_then(|_| platform::snapshot(preview, changes.seen.as_ref()));
+                    let result = apartment.as_ref().map_err(Clone::clone).and_then(|_| {
+                        platform::snapshot(preview, changes.seen.as_ref(), &mut apps)
+                    });
                     let update = match result {
                         Ok(snapshot) => Update {
                             access: snapshot.access,
@@ -150,7 +155,7 @@ impl Monitor {
                         break;
                     }
                     ctx.request_repaint();
-                    if commands.recv_timeout(Duration::from_secs(1))
+                    if commands.recv_timeout(Duration::from_millis(500))
                         != Err(mpsc::RecvTimeoutError::Timeout)
                     {
                         break;
@@ -188,7 +193,7 @@ pub struct Probe {
 }
 pub fn probe() -> Result<Probe, String> {
     let _apartment = platform::Apartment::new(false)?;
-    let snapshot = platform::snapshot(false, None)?;
+    let snapshot = platform::snapshot(false, None, &mut HashMap::new())?;
     Ok(Probe {
         access: snapshot.access,
         whatsapp_notifications: snapshot.items.len(),
@@ -248,7 +253,11 @@ mod platform {
             _ => Access::Unspecified,
         }
     }
-    pub fn snapshot(preview: bool, seen: Option<&HashSet<Key>>) -> Result<Snapshot, String> {
+    pub fn snapshot(
+        preview: bool,
+        seen: Option<&HashSet<Key>>,
+        apps: &mut HashMap<Key, bool>,
+    ) -> Result<Snapshot, String> {
         let listener = UserNotificationListener::Current().map_err(error)?;
         let status = access(listener.GetAccessStatus().map_err(error)?);
         if status != Access::Allowed {
@@ -263,23 +272,33 @@ mod platform {
             .join()
             .map_err(error)?;
         let mut items = Vec::new();
+        let mut current = HashSet::new();
         for notification in notifications {
             // A dismissed or malformed notification must not prevent processing the others.
-            let read = || -> windows::core::Result<Option<Message>> {
-                let info = notification.AppInfo()?;
-                let app_id = info.AppUserModelId()?.to_string();
-                let name = info
-                    .DisplayInfo()
-                    .and_then(|d| d.DisplayName())
-                    .map(|n| n.to_string())
-                    .unwrap_or_default();
-                if !is_whatsapp(&app_id, &name) {
-                    return Ok(None);
-                }
+            let mut read = || -> windows::core::Result<Option<Message>> {
                 let key = (
                     notification.Id()?,
                     notification.CreationTime()?.UniversalTime,
                 );
+                current.insert(key);
+                let whatsapp = match apps.get(&key) {
+                    Some(&known) => known,
+                    None => {
+                        let info = notification.AppInfo()?;
+                        let app_id = info.AppUserModelId()?.to_string();
+                        let name = info
+                            .DisplayInfo()
+                            .and_then(|d| d.DisplayName())
+                            .map(|n| n.to_string())
+                            .unwrap_or_default();
+                        let known = is_whatsapp(&app_id, &name);
+                        apps.insert(key, known);
+                        known
+                    }
+                };
+                if !whatsapp {
+                    return Ok(None);
+                }
                 let mut message = Message {
                     key,
                     title: String::new(),
@@ -306,6 +325,7 @@ mod platform {
                 items.push(message);
             }
         }
+        apps.retain(|key, _| current.contains(key));
         // A revoked permission can otherwise look like an empty notification list.
         let status = access(listener.GetAccessStatus().map_err(error)?);
         Ok(Snapshot {
@@ -362,7 +382,11 @@ mod platform {
             Err("WhatsApp notifications currently require Windows.".into())
         }
     }
-    pub fn snapshot(_: bool, _: Option<&HashSet<Key>>) -> Result<Snapshot, String> {
+    pub fn snapshot(
+        _: bool,
+        _: Option<&HashSet<Key>>,
+        _: &mut HashMap<Key, bool>,
+    ) -> Result<Snapshot, String> {
         Err("WhatsApp notifications currently require Windows.".into())
     }
     pub fn request_access(

@@ -138,7 +138,8 @@ pub enum Event {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum Command {
     Configure([bool; 2]),
-    /// The notch is resting: poll every 5 s instead of every 2 s.
+    /// The notch is resting: poll every 5 s instead of every 2 s. A streaming reply is still
+    /// checked every half second, so its completion is not held back by the pace.
     Pace(bool),
     Open(Target),
     Send(Target, Binding, String),
@@ -309,16 +310,17 @@ fn is_send(name: &str) -> bool {
     )
 }
 #[cfg(any(windows, test))]
+const STOP_NAMES: [&str; 6] = [
+    "stop",
+    "stop generating",
+    "stop response",
+    "stop streaming",
+    "stop generation",
+    "hentikan",
+];
+#[cfg(any(windows, test))]
 fn is_stop(name: &str) -> bool {
-    matches!(
-        name.trim().to_lowercase().as_str(),
-        "stop"
-            | "stop generating"
-            | "stop response"
-            | "stop streaming"
-            | "stop generation"
-            | "hentikan"
-    )
+    STOP_NAMES.contains(&name.trim().to_lowercase().as_str())
 }
 #[cfg(any(windows, test))]
 fn is_attention(name: &str) -> bool {
