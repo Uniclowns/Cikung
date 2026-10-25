@@ -147,6 +147,24 @@ impl Cikung {
                 &mut self.prefs.minimal_notch,
                 "Minimal notch: just the cat and the time while nothing plays",
             );
+            ui.horizontal(|ui| {
+                ui.label("Cikung visits");
+                let minutes = self.prefs.cat_visit_minutes;
+                egui::ComboBox::from_id_salt("cat-visits")
+                    .selected_text(
+                        super::visits::VISIT_MINUTES
+                            .iter()
+                            .find(|(m, _)| *m == minutes)
+                            .map_or_else(|| format!("Every {minutes} minutes"), |(_, n)| (*n).into()),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (m, name) in super::visits::VISIT_MINUTES {
+                            ui.selectable_value(&mut self.prefs.cat_visit_minutes, m, name);
+                        }
+                    });
+            })
+            .response
+            .on_hover_text("Every so often Cikung hops, wiggles and says hello in the notch. It waits while the panel is open, another message shows, you focus or record, or a fullscreen app is in front.");
             if ui
                 .checkbox(&mut self.autostart, "Start Cikung when I sign in")
                 .changed()

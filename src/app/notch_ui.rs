@@ -106,11 +106,11 @@ impl Cikung {
                 && !self.demo)
                 .then(|| self.current_lyric().map(str::to_owned))
                 .flatten();
-            // A WhatsApp message rides the lyric ticker, so the pill widening to fit it reveals
-            // the line instead of re-cutting it every frame.
+            // A message rides the lyric ticker, so the pill widening to fit it reveals the line
+            // instead of re-cutting it every frame.
             let lyric = notice
-                .filter(|n| n.title == "WhatsApp" && !show_actions && self.file_hover.is_none())
-                .map(|n| n.text.clone())
+                .filter(|_| !show_actions && self.file_hover.is_none())
+                .map(|_| title.clone())
                 .or(lyric);
             let reduced = self.prefs.reduced_motion;
             // Open with nothing more urgent to say: Nusa-style two-tone page title.
@@ -219,6 +219,7 @@ impl Cikung {
                     | "Water break"
                     | "Focus complete"
                     | "Break complete"
+                    | "Cikung visit"
             ) && n.until > Instant::now()
         })
     }

@@ -28,6 +28,7 @@ mod notch_ui;
 mod schedule;
 mod settings_pages;
 mod settings_window;
+mod visits;
 
 pub(crate) const WHITE: Color32 = Color32::from_rgb(245, 245, 247);
 pub(crate) const GRAY: Color32 = Color32::from_rgb(145, 145, 152);
@@ -284,6 +285,8 @@ pub(crate) struct Preferences {
     pub system_notices: bool,
     /// Nusa's minimal notch: only the cat and the time while nothing plays.
     pub minimal_notch: bool,
+    /// Minutes between Cikung's visits in the notch; 0 is off (see `visits::VISIT_MINUTES`).
+    pub cat_visit_minutes: u32,
     /// Tasks with a due time go to Google Calendar once Google is connected.
     pub calendar_sync: bool,
     pub whatsapp_notifications: bool,
@@ -329,6 +332,7 @@ impl Default for Preferences {
             bluetooth_notifications: true,
             system_notices: true,
             minimal_notch: true,
+            cat_visit_minutes: 15,
             calendar_sync: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,
@@ -467,6 +471,9 @@ pub struct Cikung {
     pub(crate) selected_agent: Option<String>,
     pub(crate) qr: Option<(String, egui::TextureHandle)>,
     pub(crate) poke_until: Instant,
+    visits: visits::Visits,
+    /// A fullscreen app covers the notch's screen, as last checked.
+    screen_covered: bool,
     capture: Option<String>,
     audit: Option<String>,
     capture_requested: bool,
@@ -723,6 +730,8 @@ impl Cikung {
             selected_agent: None,
             qr: None,
             poke_until: Instant::now(),
+            visits: Default::default(),
+            screen_covered: false,
             capture: launch.capture,
             audit: launch.audit,
             capture_requested: false,
@@ -1325,6 +1334,7 @@ impl Cikung {
             }
         }
         self.sync_calendar(ctx);
+        self.cat_visit();
         if let Some(result) = self.dictation.poll() {
             match result {
                 Ok(text) => {
@@ -1480,7 +1490,8 @@ impl Cikung {
             .as_ref()
             .is_some_and(|s| s.state == PlaybackState::Playing);
         let phase = self.started.elapsed().as_secs_f32();
-        let bounce = if self.prefs.reduced_motion {
+        let pose = self.visit_pose();
+        let bounce = if self.prefs.reduced_motion || pose.is_some() {
             0.0
         } else if self.poke_until > Instant::now() {
             (phase * 20.0).sin() * 2.0
@@ -1489,7 +1500,16 @@ impl Cikung {
         } else {
             (phase * 1.3).sin() * 0.35
         };
-        let cat_rect = rect.translate(Vec2::new(0.0, bounce)).shrink(1.0);
+        let base = rect.translate(Vec2::new(0.0, bounce)).shrink(1.0);
+        // A visit squashes and stretches the cat about its feet, outfit and all.
+        let cat_rect = pose.as_ref().map_or(base, |pose| {
+            let size = base.size() * pose.scale;
+            Rect::from_min_size(
+                Pos2::new(base.center().x - size.x / 2.0, base.bottom() - size.y),
+                size,
+            )
+            .translate(pose.offset)
+        });
         ui.painter().image(
             self.cat_textures[self.active_breed().index()].id(),
             cat_rect,
@@ -1497,6 +1517,10 @@ impl Cikung {
             Color32::WHITE,
         );
         Self::paint_outfit(ui, cat_rect, self.active_outfit());
+        if let Some(pose) = &pose {
+            visits::paint_hearts(ui.painter(), cat_rect, pose.t);
+            ui.ctx().request_repaint();
+        }
         if response.clicked() {
             self.poke_until = Instant::now() + Duration::from_secs(1);
             self.toast("Mrrp!", "Cikung is keeping you company.");
@@ -1564,6 +1588,7 @@ impl eframe::App for Cikung {
             let covered = self.capture.is_none()
                 && self.audit.is_none()
                 && native::fullscreen_on_display(&self.prefs.display);
+            self.screen_covered = covered;
             let fullscreen = covered && self.prefs.tuck_in_fullscreen;
             if fullscreen && !self.fullscreen {
                 self.expanded = false;
@@ -1654,7 +1679,7 @@ impl eframe::App for Cikung {
             (text + 198.0).clamp(min, max.max(min))
         };
         let message_width = (!self.expanded)
-            .then(|| self.header_notice().filter(|n| n.title == "WhatsApp"))
+            .then(|| self.header_notice())
             .flatten()
             .map(|n| {
                 fit(
