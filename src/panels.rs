@@ -189,7 +189,14 @@ impl Cikung {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if !self.tools.shelf.is_empty()
                     && ui
-                        .small_button("Clear")
+                        .add(
+                            egui::Button::new(
+                                RichText::new("Clear all")
+                                    .size(11.0)
+                                    .color(Color32::from_rgb(235, 87, 87)),
+                            )
+                            .frame(false),
+                        )
                         .on_hover_text("Empty the pocket. Your original files stay put.")
                         .clicked()
                 {
@@ -510,12 +517,13 @@ impl Cikung {
             egui::ProgressBar::new((total as f32 / goal as f32).min(1.0))
                 .fill(accent())
                 .text(format!(
-                    "{} drinks today{}",
+                    "Today · {}% · {} drinks · reminders {}",
+                    (total as f32 / goal as f32 * 100.0).round() as u32,
                     self.tools.water.drank_today,
-                    if total >= goal {
-                        " · goal reached"
+                    if self.tools.water.enabled {
+                        "on"
                     } else {
-                        ""
+                        "off"
                     }
                 )),
         );
@@ -552,6 +560,14 @@ impl Cikung {
                 self.tools.water.snooze(10);
             }
         });
+        ui.add_space(6.0);
+        let water = &self.tools.water;
+        hourly_chart(
+            ui,
+            &water.hourly_ml,
+            water.active_start_hour,
+            water.active_end_hour,
+        );
         ui.collapsing("Bottle, goal & reminder hours", |ui| {
             let mut changed = false;
             ui.horizontal_wrapped(|ui| {
@@ -813,6 +829,7 @@ impl Cikung {
             );
             ui.label(&message.content);
         }
+        self.task_proposals(ui);
         if self.chat_busy {
             ui.spinner();
             ui.label("Thinking…");
@@ -1042,7 +1059,7 @@ impl Cikung {
     }
 }
 
-fn parse_task_due(value: &str) -> Result<Option<u64>, String> {
+pub(crate) fn parse_task_due(value: &str) -> Result<Option<u64>, String> {
     use chrono::TimeZone;
     if value.trim().is_empty() {
         return Ok(None);
@@ -1057,7 +1074,7 @@ fn parse_task_due(value: &str) -> Result<Option<u64>, String> {
         .map(Some)
         .map_err(|_| "Choose a reminder date after 1970.".into())
 }
-fn format_task_due(unix: u64) -> String {
+pub(crate) fn format_task_due(unix: u64) -> String {
     i64::try_from(unix)
         .ok()
         .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
@@ -1138,5 +1155,86 @@ fn human_size(bytes: u64) -> String {
     match unit {
         None => format!("{bytes} B"),
         Some(unit) => format!("{value:.1} {}", units[unit]),
+    }
+}
+
+/// Today's drinks by hour across the reminder hours, like Nusa's water chart.
+fn hourly_chart(ui: &mut egui::Ui, hourly: &[u32], start: u32, end: u32) {
+    let (start, end) = (start.min(23), end.min(23));
+    let hours: Vec<u32> = if start == end {
+        (0..24).collect()
+    } else if start < end {
+        (start..=end).collect()
+    } else {
+        (start..24).chain(0..=end).collect()
+    };
+    let now = chrono::Timelike::hour(&chrono::Local::now());
+    let ml = |hour: u32| hourly.get(hour as usize).copied().unwrap_or(0);
+    // A round top in 250 ml steps keeps the axis readable.
+    let top = hours
+        .iter()
+        .map(|&hour| ml(hour))
+        .max()
+        .unwrap_or(0)
+        .max(250)
+        .div_ceil(250)
+        * 250;
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width().min(360.0), 82.0),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    let plot = egui::Rect::from_min_max(
+        rect.min + Vec2::new(40.0, 4.0),
+        rect.max - Vec2::new(0.0, 16.0),
+    );
+    let font = egui::FontId::proportional(9.0);
+    for (value, y) in [
+        (top, plot.top()),
+        (top / 2, plot.center().y),
+        (0, plot.bottom()),
+    ] {
+        let label = if value == 0 {
+            "0 ml".to_owned()
+        } else {
+            value.to_string()
+        };
+        painter.text(
+            egui::pos2(plot.left() - 6.0, y),
+            egui::Align2::RIGHT_CENTER,
+            label,
+            font.clone(),
+            muted(),
+        );
+    }
+    let slot = plot.width() / hours.len() as f32;
+    for (index, &hour) in hours.iter().enumerate() {
+        let x = plot.left() + slot * (index as f32 + 0.5);
+        let value = ml(hour);
+        let height = (value as f32 / top as f32 * plot.height()).max(2.0);
+        let color = if hour == now {
+            accent()
+        } else if value > 0 {
+            ink()
+        } else {
+            veil(40)
+        };
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(x - slot * 0.3, plot.bottom() - height),
+                egui::pos2(x + slot * 0.3, plot.bottom()),
+            ),
+            2,
+            color,
+        );
+        if hour % 3 == 0 {
+            painter.text(
+                egui::pos2(x, plot.bottom() + 3.0),
+                egui::Align2::CENTER_TOP,
+                format!("{hour:02}"),
+                font.clone(),
+                muted(),
+            );
+        }
     }
 }

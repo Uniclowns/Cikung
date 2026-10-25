@@ -12,6 +12,7 @@ mod cloud;
 mod completion_sound;
 mod desktop_apps;
 mod dictation;
+mod google_calendar;
 mod instance;
 mod media;
 mod monitor;
@@ -23,6 +24,7 @@ mod recording;
 #[cfg(target_os = "windows")]
 mod setup;
 mod shell;
+mod system_notices;
 mod tools;
 mod whatsapp;
 

@@ -26,7 +26,7 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 - A quick pointer pass does not open the panel. Leaving gets a short grace period; moving back cancels closing. Clicking inside gives a longer grace period. Popups, typing, and dragging hold it open.
 - Click **×** or press Escape to collapse. It stays at the top center and waits for you to leave before hover can open it again.
 - **Ctrl+Alt+C** toggles the single notch; change its letter in Settings.
-- Windows borderless fullscreen apps tuck the notch away on its screen. Ctrl+Alt+C can still open it; change this behavior in Settings → General.
+- The notch stays in front of fullscreen apps, such as a YouTube video in fullscreen. To have it step aside instead, turn on Settings → General → Tuck away during fullscreen apps (Windows); Ctrl+Alt+C still opens it.
 - Right-click the cat for its wardrobe or quit. The tray also has Settings and Quit.
 - Settings opens a separate window with grouped FLOW / NOTCH navigation. General selects the display and optional startup; Music & lyrics controls automatic Music on hover and lyrics; Shortcuts changes the global shortcut. Done or the window close button saves changes and leaves Cikung running.
 
@@ -37,19 +37,20 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 | Game | Manual-context AI hints for noncompetitive games, three spoiler levels, separate replies, and protected desktop-app draft handoff. |
 | WhatsApp notifications | Windows notification reader for WhatsApp and WhatsApp Desk, optional previews, permission/status and local test. |
 | Bluetooth | Windows Classic/LE connection notifications and connected device names; opt-out in General. |
-| Music | System media detection, title/artist/covers, player selection, play/pause, previous/next, seek, shuffle and repeat when supported; Windows system volume. |
+| System notices | Windows heads-ups in the notch, as in Nusa: charger connected or unplugged, low (20 %) and critical (10 %) battery, fully charged, internet connected, lost or without access, Caps Lock on or off, and a volume HUD whose bar eases to the new level when the volume changes; opt-out in General. |
+| Music | System media detection, title/artist/covers, player selection, play/pause, previous/next, seek, shuffle and repeat when supported; a speaker and system volume slider beside the transport, as in Nusa (Windows and Mac). |
 | Lyrics | Automatic LRCLIB lookup, imported LRC/plain lyrics and click-to-seek synchronized lines on supported players. |
 | Focus | Focus/break timers, custom duration, pause/resume, session and focused-time counts. |
-| Files | Drop files on the notch, keep local references, open/reveal them, remove references. Originals are not moved or deleted. |
-| Tasks | Persistent tasks, completion, editing and optional local due reminders while Cikung runs. |
-| Water | Opt-in reminders, bottle volume, daily ml goal, active hours, snooze, drink count and recent volume history. |
+| Files | Drop files on the notch, keep local references, open/reveal them, remove one or Clear all. Originals are not moved or deleted. |
+| Tasks | Persistent tasks, completion, editing and optional local due reminders while Cikung runs. The chat assistant can propose tasks you confirm, and tasks with a due time sync to Google Calendar after a one-time sign-in with your own OAuth client ([guide](docs/google-calendar.md)). |
+| Water | Opt-in reminders, bottle volume, daily ml goal, active hours, snooze, drink count, an hourly chart of today's drinks (as in Nusa) and recent daily totals. |
 | Notes | Local notes, imports/export, explicit Windows microphone + PC-audio recording, dictation, transcription, AI summaries and marked action-item extraction. |
-| Agents | Claude App and Codex / ChatGPT App desktop status, visible conversation and explicit Send to active chat on Windows; Oh My Pi retains its connected terminal integration. |
+| Agents | Claude App and Codex / ChatGPT App desktop status, visible conversation and explicit Send to active chat on Windows; a reply that finishes while the app is in the background is announced from the app's own Windows notification. Oh My Pi retains its connected terminal integration. |
 | Chat | OpenAI, Anthropic, Gemini, DeepSeek, Qwen, Moonshot/Kimi, Ollama and LM Studio. |
 | Services | Read-only GitHub, Stripe, Vercel, Resend, Notion, Cal.com and n8n account/status clients. |
 | Phone | Opt-in same-Wi-Fi browser companion, QR pairing, agent activity/diffs/approvals, media controls and revocation. |
 | Cats | Six generated breeds, per-feature and per-agent cat choices, a favorite for the whole app, accessories, reactions and reduced motion. |
-| Settings | Display, hover, global shortcut, secure provider keys, VLC connection and optional user-scope sign-in startup. |
+| Settings | Display, hover, global shortcut, secure provider keys, VLC connection, optional user-scope sign-in startup and Nusa's minimal notch (only the cat and the time while nothing plays, on by default). |
 
 The music animation follows playback, not audio beats. Media information and controls depend on the player. Nothing in normal mode uses sample account data; demo media is explicitly labeled.
 

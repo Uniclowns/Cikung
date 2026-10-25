@@ -16,12 +16,15 @@ raw-window-handle = "0.6"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls", "multipart"] }
 tiny_http = "0.12"
 getrandom = "0.3"
+# Google sign-in PKCE; both were already in the lock file through other crates.
+sha2 = "0.10"
+base64 = "0.22"
 qrcode = { version = "0.14", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 rfd = "0.15"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = ["ApplicationModel", "UI_Notifications_Management", "Foundation", "Foundation_Collections", "Devices_Bluetooth", "Devices_Enumeration", "Globalization", "Media", "Media_Control", "Media_Playback", "Media_Core", "Media_SpeechRecognition", "Storage", "Storage_Streams", "Win32_System_WinRT", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_Power", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Ole", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
+windows = { version = "0.62", features = ["ApplicationModel", "UI_Notifications_Management", "Foundation", "Foundation_Collections", "Devices_Bluetooth", "Devices_Enumeration", "Globalization", "Media", "Media_Control", "Media_Playback", "Media_Core", "Media_SpeechRecognition", "Networking_Connectivity", "Storage", "Storage_Streams", "Win32_System_WinRT", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_Power", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Diagnostics_ToolHelp", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
 keyring = { version = "3", features = ["windows-native"] }
 wasapi = "0.22"
 hound = "3.5"

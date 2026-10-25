@@ -29,27 +29,55 @@ impl Cikung {
         ));
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 9.0;
+            if !show_actions && self.minimal_idle() {
+                // Cat (22) + spacing (9) + time (~34), centred in the minimal pill.
+                ui.add_space(((width - 65.0) / 2.0).max(0.0));
+                self.draw_cat(ui, 22.0);
+                ui.label(RichText::new(&clock).size(13.0).strong().color(ink()));
+                return;
+            }
             self.draw_cat(ui, 31.0);
-            let notice = self.notices.back().filter(|n| {
-                matches!(
-                    n.title.as_str(),
-                    "Bluetooth"
-                        | "AI finished"
-                        | "WhatsApp"
-                        | "WhatsApp test"
-                        | "Task reminder"
-                        | "Water break"
-                        | "Focus complete"
-                        | "Break complete"
-                ) && n.until > Instant::now()
+            // Volume HUD: the bar eases from the last shown level to the new one.
+            let hud = (!show_actions).then(|| self.volume_hud_level()).flatten();
+            let hud_fill = hud.map(|(level, _)| {
+                ui.ctx()
+                    .animate_value_with_time(egui::Id::new("volume-hud-fill"), level, 0.18)
             });
+            let hud_alpha = ui.ctx().animate_bool_with_time(
+                egui::Id::new("volume-hud-on"),
+                hud.is_some(),
+                0.15,
+            );
+            if hud.is_some() {
+                // Wake again in time to hand the slot back to the title.
+                ui.ctx().request_repaint_after(Duration::from_millis(100));
+            }
+            // The HUD takes the whole row beside the cat; the title, clock and date step aside.
+            if let (Some((level, muted)), Some(fill)) = (hud, hud_fill) {
+                let size = Vec2::new(ui.available_width(), 32.0);
+                let response = ui
+                    .allocate_ui_with_layout(
+                        size,
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_min_size(size);
+                            volume_hud(ui, fill, level, muted, hud_alpha)
+                        },
+                    )
+                    .inner;
+                if response.clicked() {
+                    self.expanded = !self.expanded;
+                }
+                return;
+            }
+            let notice = self.header_notice();
             let tooltip = notice
                 .map(|n| n.text.clone())
                 .unwrap_or_else(|| "Click to open or close · Escape to close".into());
             let title = if self.file_hover.is_some() {
                 "Release to keep files".to_owned()
             } else if let Some(notice) = notice {
-                if notice.title.starts_with("WhatsApp") {
+                if notice.title == "WhatsApp test" {
                     format!("{} · {}", notice.title, notice.text)
                 } else {
                     notice.text.clone()
@@ -78,6 +106,12 @@ impl Cikung {
                 && !self.demo)
                 .then(|| self.current_lyric().map(str::to_owned))
                 .flatten();
+            // A message rides the lyric ticker, so the pill widening to fit it reveals the line
+            // instead of re-cutting it every frame.
+            let lyric = notice
+                .filter(|_| !show_actions && self.file_hover.is_none())
+                .map(|_| title.clone())
+                .or(lyric);
             let reduced = self.prefs.reduced_motion;
             // Open with nothing more urgent to say: Nusa-style two-tone page title.
             let heading = title
@@ -86,6 +120,9 @@ impl Cikung {
             // Cat, clock, gear and × with their spacing.
             let reserved = if show_actions { 212.0 } else { 162.0 };
             let title_width = (width - reserved).max(20.0);
+            // A lyric is laid out at the width the pill is growing to and clipped by its
+            // moving edge, so a longer line is revealed rather than re-cut every frame.
+            let lyric_cut = (self.motion.target().x - 28.0 - reserved).max(title_width);
             let response = ui
                 .allocate_ui_with_layout(
                     Vec2::new(title_width, 32.0),
@@ -93,7 +130,7 @@ impl Cikung {
                     |ui| {
                         ui.set_min_size(Vec2::new(title_width, 32.0));
                         if let Some(line) = &lyric {
-                            lyric_ticker(ui, line, reduced)
+                            lyric_ticker(ui, line, reduced, lyric_cut)
                         } else if let Some(heading) = heading {
                             ui.add(
                                 egui::Label::new(title_job(heading))
@@ -164,6 +201,49 @@ impl Cikung {
                 self.eq_bars(ui);
             }
         });
+    }
+
+    /// The latest notice the collapsed header shows in place of the title.
+    pub(super) fn header_notice(&self) -> Option<&Notice> {
+        self.notices.back().filter(|n| {
+            matches!(
+                n.title.as_str(),
+                "Bluetooth"
+                    | "Battery"
+                    | "Network"
+                    | "Caps Lock"
+                    | "AI finished"
+                    | "WhatsApp"
+                    | "WhatsApp test"
+                    | "Task reminder"
+                    | "Water break"
+                    | "Focus complete"
+                    | "Break complete"
+                    | "Cikung visit"
+            ) && n.until > Instant::now()
+        })
+    }
+
+    /// The volume HUD's level and mute while it is due in the collapsed notch.
+    pub(super) fn volume_hud_level(&self) -> Option<(f32, bool)> {
+        self.volume_hud
+            .filter(|(_, _, until)| *until > Instant::now())
+            .map(|(level, muted, _)| (level, muted))
+    }
+
+    /// Nusa's minimal notch: just the cat and the time while nothing plays or needs saying.
+    pub(super) fn minimal_idle(&self) -> bool {
+        self.prefs.minimal_notch
+            && !self.demo
+            && self.header_notice().is_none()
+            && self.volume_hud_level().is_none()
+            && self.file_hover.is_none()
+            && !self.recorder.is_recording()
+            && !self.tools.focus.running
+            && self
+                .session
+                .as_ref()
+                .is_none_or(|s| s.state != PlaybackState::Playing)
     }
 
     /// Three small bars that bounce while music plays.
@@ -256,16 +336,25 @@ impl Cikung {
         }
     }
 
-    /// Carousel position: each `Page::CAROUSEL` page, then the all-tools grid last.
+    /// The carousel's pages, without the ones turned off in Settings → General.
+    fn carousel(&self) -> Vec<Page> {
+        Page::CAROUSEL
+            .into_iter()
+            .filter(|page| !self.prefs.hidden_pages.contains(page))
+            .collect()
+    }
+
+    /// Carousel position: each carousel page, then the all-tools grid last.
     fn carousel_index(&self) -> Option<usize> {
+        let pages = self.carousel();
         if self.more_open {
-            return Some(Page::CAROUSEL.len());
+            return Some(pages.len());
         }
-        Page::CAROUSEL.iter().position(|page| *page == self.page)
+        pages.iter().position(|page| *page == self.page)
     }
 
     fn show_carousel(&mut self, index: usize) {
-        if let Some(page) = Page::CAROUSEL.get(index) {
+        if let Some(page) = self.carousel().get(index) {
             self.navigate(*page);
         } else {
             self.more_open = true;
@@ -273,35 +362,35 @@ impl Cikung {
         }
     }
 
-    /// Nusa-style page indicator centred on the panel's bottom edge: a pill for the
-    /// current page, dots for the rest.
+    /// Nusa-style page indicator centred on the panel's bottom edge. The current page's pill
+    /// glides between the dots, each dot widening as it arrives; the mouse wheel over the
+    /// strip flips pages.
     fn page_indicator(&mut self, ui: &mut egui::Ui, center: Pos2, opacity: f32, interactive: bool) {
-        let count = Page::CAROUSEL.len() + 1;
+        let pages = self.carousel();
+        let count = pages.len() + 1;
         let spacing = 12.0;
         let left = center.x - spacing * (count as f32 - 1.0) / 2.0;
-        let current = self.carousel_index();
+        let glide = if self.prefs.reduced_motion { 0.0 } else { 0.32 };
+        let pill = self
+            .carousel_index()
+            .map(|index| ease_toward(ui.ctx(), ui.id().with("page-pill"), index as f32, glide));
         for index in 0..count {
             let dot = Pos2::new(left + spacing * index as f32, center.y);
             let hit = Rect::from_center_size(dot, Vec2::new(spacing, 14.0));
             let hovered = interactive && ui.rect_contains_pointer(hit);
-            if current == Some(index) {
-                ui.painter().rect_filled(
-                    Rect::from_center_size(dot, Vec2::new(14.0, 5.0)),
-                    3,
-                    ink().gamma_multiply(opacity),
-                );
-            } else {
-                let gray = if hovered { 170 } else { 85 };
-                ui.painter().circle_filled(
-                    dot,
-                    2.5,
-                    Color32::from_gray(gray).gamma_multiply(opacity),
-                );
-            }
+            // 1 under the pill, 0 a dot or more away, smoothstepped.
+            let near = pill.map_or(0.0, |p| (1.0 - (index as f32 - p).abs()).clamp(0.0, 1.0));
+            let near = near * near * (3.0 - 2.0 * near);
+            let dim = Color32::from_gray(if hovered { 170 } else { 85 });
+            ui.painter().rect_filled(
+                Rect::from_center_size(dot, Vec2::new(5.0 + 9.0 * near, 5.0)),
+                2.5,
+                dim.lerp_to_gamma(ink(), near).gamma_multiply(opacity),
+            );
             if !interactive {
                 continue;
             }
-            let (main, accent, _) = page_title(Page::CAROUSEL.get(index).copied());
+            let (main, accent, _) = page_title(pages.get(index).copied());
             if ui
                 .interact(hit, ui.id().with(("page-dot", index)), Sense::click())
                 .on_hover_text(format!("{main} {accent}"))
@@ -310,11 +399,27 @@ impl Cikung {
                 self.show_carousel(index);
             }
         }
+        let strip = Rect::from_center_size(center, Vec2::new(spacing * count as f32 + 16.0, 22.0));
+        if interactive && ui.rect_contains_pointer(strip) {
+            // Wheel down or swipe left: next page. One notch (40 pt) is one page.
+            let delta = ui.input(|i| i.raw_scroll_delta);
+            let id = ui.id().with("page-wheel");
+            let total = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0) - delta.x - delta.y;
+            let step = if total.abs() >= 30.0 {
+                total.signum() as isize
+            } else {
+                0
+            };
+            ui.data_mut(|d| d.insert_temp(id, if step == 0 { total } else { 0.0 }));
+            if step != 0 {
+                self.step_page(step);
+            }
+        }
     }
 
     /// Next/previous carousel page, wrapping; pages outside it enter at either end.
     pub(super) fn step_page(&mut self, delta: isize) {
-        let len = Page::CAROUSEL.len() as isize + 1;
+        let len = self.carousel().len() as isize + 1;
         let next = match self.carousel_index() {
             Some(index) => (index as isize + delta).rem_euclid(len),
             None if delta > 0 => 0,
@@ -387,22 +492,10 @@ impl Cikung {
                 .color(muted()),
         );
         ui.add_space(12.0);
-        let tools = [
-            (Page::Music, "What's playing"),
-            (Page::Focus, "Pomodoro sessions"),
-            (Page::Water, "Time for a sip"),
-            (Page::Files, "Keep files nearby"),
-            (Page::Tasks, "One thing at a time"),
-            (Page::Notes, "Capture and remember"),
-            (Page::Agents, "Claude and Codex"),
-            (Page::Lyrics, "Follow the words"),
-            (Page::Chat, "Ask Cikung"),
-            (Page::Game, "A hint for your adventure"),
-            (Page::Services, "Connected accounts"),
-            (Page::Phone, "Pair your phone"),
-            (Page::Overview, "Your little team"),
-            (Page::Style, "Meet your cats"),
-        ];
+        let tools: Vec<_> = TOOLS
+            .into_iter()
+            .filter(|(page, _)| !self.prefs.hidden_pages.contains(page))
+            .collect();
         let width = (ui.available_width() - 10.0) / 2.0;
         for row in tools.chunks(2) {
             ui.horizontal(|ui| {
@@ -423,8 +516,110 @@ impl Cikung {
     }
 }
 
+/// Every tool page with its caption, for the all-tools grid and the Settings switches.
+pub(super) const TOOLS: [(Page, &str); 14] = [
+    (Page::Music, "What's playing"),
+    (Page::Focus, "Pomodoro sessions"),
+    (Page::Water, "Time for a sip"),
+    (Page::Files, "Keep files nearby"),
+    (Page::Tasks, "One thing at a time"),
+    (Page::Notes, "Capture and remember"),
+    (Page::Agents, "Claude and Codex"),
+    (Page::Lyrics, "Follow the words"),
+    (Page::Chat, "Ask Cikung"),
+    (Page::Game, "A hint for your adventure"),
+    (Page::Services, "Connected accounts"),
+    (Page::Phone, "Pair your phone"),
+    (Page::Overview, "Your little team"),
+    (Page::Style, "Meet your cats"),
+];
+
+/// Eases out (cubic) over `seconds` from the value shown when `target` last changed.
+fn ease_toward(ctx: &egui::Context, id: egui::Id, target: f32, seconds: f64) -> f32 {
+    let now = ctx.input(|i| i.time);
+    let (from, to, started) =
+        ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(id, || (target, target, now)));
+    let t = if seconds > 0.0 {
+        ((now - started) / seconds).clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    };
+    let shown = from + (to - from) * (1.0 - (1.0 - t).powi(3));
+    if to != target {
+        ctx.data_mut(|d| d.insert_temp(id, (shown, target, now)));
+    }
+    if to != target || t < 1.0 {
+        ctx.request_repaint();
+    }
+    shown
+}
+
+/// Nusa-style volume HUD beside the cat: a speaker, a bar easing to the new level, and the
+/// percentage (or "Muted").
+fn volume_hud(
+    ui: &mut egui::Ui,
+    fill: f32,
+    level: f32,
+    is_muted: bool,
+    alpha: f32,
+) -> egui::Response {
+    let rect = ui.max_rect();
+    let response = ui.allocate_rect(rect, Sense::click());
+    let painter = ui.painter_at(rect);
+    let color = ink().gamma_multiply(alpha);
+    let waves = if is_muted || level <= 0.0 {
+        0
+    } else if level > 0.5 {
+        2
+    } else {
+        1
+    };
+    super::music::paint_speaker(
+        &painter,
+        Pos2::new(rect.left() + 8.0, rect.center().y),
+        waves,
+        is_muted,
+        color,
+    );
+    let bar = Rect::from_min_max(
+        Pos2::new(rect.left() + 26.0, rect.center().y - 2.0),
+        Pos2::new(
+            (rect.right() - 44.0).max(rect.left() + 40.0),
+            rect.center().y + 2.0,
+        ),
+    );
+    painter.rect_filled(bar, 2, veil(40).gamma_multiply(alpha));
+    painter.rect_filled(
+        bar.with_max_x(bar.left() + bar.width() * fill.clamp(0.0, 1.0)),
+        2,
+        if is_muted {
+            muted().gamma_multiply(alpha)
+        } else {
+            color
+        },
+    );
+    painter.text(
+        Pos2::new(rect.right(), rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        if is_muted {
+            "Muted".to_owned()
+        } else {
+            format!("{:.0}%", level * 100.0)
+        },
+        egui::FontId::proportional(12.0),
+        color,
+    );
+    response
+}
+
 /// Collapsed-notch lyric line: the old line lifts away as the new one rises in.
-pub(super) fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui::Response {
+/// `width` is where a line is cut; the visible rect clips anything past it.
+pub(super) fn lyric_ticker(
+    ui: &mut egui::Ui,
+    line: &str,
+    reduced: bool,
+    width: f32,
+) -> egui::Response {
     let rect = ui.max_rect();
     let response = ui.allocate_rect(rect, Sense::click());
     let now = ui.input(|i| i.time);
@@ -452,7 +647,7 @@ pub(super) fn lyric_ticker(ui: &mut egui::Ui, line: &str, reduced: bool) -> egui
             egui::FontId::proportional(12.5),
             ink(),
         );
-        job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width());
+        job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(rect.width()));
         let galley = painter.layout_job(job);
         let pos = Pos2::new(rect.left(), rect.center().y - galley.size().y / 2.0 + dy);
         painter.galley_with_override_text_color(pos, galley, ink().gamma_multiply(alpha));
@@ -532,5 +727,25 @@ mod date_tests {
         assert_eq!(date_time(&after), ("00:00".into(), "Jum, 23 Okt".into()));
         let year = zone.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap();
         assert_eq!(date_time(&year), ("00:00".into(), "Jum, 1 Jan".into()));
+    }
+}
+
+#[cfg(test)]
+mod carousel_tests {
+    use super::*;
+
+    #[test]
+    fn pages_turned_off_leave_the_dots_and_the_grid() {
+        let (_, mut app) = super::super::tests::app();
+        let full = app.carousel().len();
+        app.prefs.hidden_pages = vec![Page::Water, Page::Chat];
+        assert_eq!(app.carousel().len(), full - 1);
+        assert!(!app.carousel().contains(&Page::Water));
+        // Stepping past the last page lands on the all-tools grid, then wraps.
+        app.navigate(*app.carousel().last().unwrap());
+        app.step_page(1);
+        assert!(app.more_open);
+        app.step_page(1);
+        assert_eq!(app.page, app.carousel()[0]);
     }
 }

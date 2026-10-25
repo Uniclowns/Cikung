@@ -363,6 +363,7 @@ mod tests {
             done,
             due_unix: None,
             due_notified: false,
+            google_event: None,
         }
     }
     fn note(id: u64, title: &str, text: &str, created_unix: u64) -> Note {

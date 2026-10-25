@@ -25,8 +25,10 @@ mod cat_gallery;
 mod game;
 mod music;
 mod notch_ui;
+mod schedule;
 mod settings_pages;
 mod settings_window;
+mod visits;
 
 pub(crate) const WHITE: Color32 = Color32::from_rgb(245, 245, 247);
 pub(crate) const GRAY: Color32 = Color32::from_rgb(145, 145, 152);
@@ -41,21 +43,36 @@ pub(crate) enum Theme {
     Black,
     White,
     Orange,
+    /// See-through smoked glass with a sheen and a light rim.
+    Glass,
 }
 impl Theme {
-    pub const ALL: [Self; 4] = [Self::Album, Self::Black, Self::White, Self::Orange];
+    pub const ALL: [Self; 5] = [
+        Self::Album,
+        Self::Black,
+        Self::White,
+        Self::Orange,
+        Self::Glass,
+    ];
     pub fn label(self) -> &'static str {
         match self {
             Self::Album => "Album colour",
             Self::Black => "Pure black",
             Self::White => "White",
             Self::Orange => "Orange",
+            Self::Glass => "Glass",
         }
     }
     /// Surface, main text, secondary text and accent.
     fn colors(self) -> [Color32; 4] {
         match self {
             Self::Album | Self::Black => [Color32::BLACK, WHITE, GRAY, ORANGE],
+            Self::Glass => [
+                Color32::from_rgba_unmultiplied(18, 18, 26, 150),
+                WHITE,
+                Color32::from_rgb(200, 200, 210),
+                ORANGE,
+            ],
             Self::White => [
                 Color32::from_rgb(246, 246, 248),
                 Color32::from_rgb(22, 22, 26),
@@ -99,7 +116,7 @@ pub(crate) fn veil(alpha: u8) -> Color32 {
 }
 /// Light themes swap the dark widget fills for washes of their text colour.
 fn theme_visuals(ui: &mut egui::Ui, theme: Theme) {
-    if matches!(theme, Theme::Album | Theme::Black) {
+    if matches!(theme, Theme::Album | Theme::Black | Theme::Glass) {
         return;
     }
     let [paper, ink, _, _] = theme.colors();
@@ -279,14 +296,30 @@ pub(crate) struct Preferences {
     pub music_on_hover: bool,
     pub auto_lyrics: bool,
     pub bluetooth_notifications: bool,
+    /// Battery, internet and Caps Lock heads-ups in the notch.
+    pub system_notices: bool,
+    /// Nusa's minimal notch: only the cat and the time while nothing plays.
+    pub minimal_notch: bool,
+    /// Minutes between Cikung's visits in the notch; 0 is off (see `visits::VISIT_MINUTES`).
+    pub cat_visit_minutes: u32,
+    /// Pages left out of the page dots and the all-tools grid (Settings → General).
+    pub hidden_pages: Vec<Page>,
+    /// Tasks with a due time go to Google Calendar once Google is connected.
+    pub calendar_sync: bool,
     pub whatsapp_notifications: bool,
     pub whatsapp_preview: bool,
+    /// Widest a WhatsApp message widens the collapsed pill (see `notch::MESSAGE_WIDTHS`).
+    pub whatsapp_width: f32,
     pub agent_completion_sound: bool,
     pub agent_completion_volume: u8,
     pub auto_collapse: bool,
-    pub hide_in_fullscreen: bool,
+    /// Off: the notch stays in front of fullscreen apps (a YouTube video). On: it tucks away.
+    /// Renamed from `hide_in_fullscreen`, so every profile starts with the notch in front.
+    pub tuck_in_fullscreen: bool,
     pub display: String,
     pub shortcut: String,
+    /// Ctrl + Alt + this letter tucks the whole notch away, for games and full-screen work.
+    pub hide_shortcut: String,
     pub companion_shortcut_initialized: bool,
     /// Sign-in startup has been turned on once; switching it off afterwards is kept.
     pub startup_initialized: bool,
@@ -316,14 +349,21 @@ impl Default for Preferences {
             music_on_hover: true,
             auto_lyrics: true,
             bluetooth_notifications: true,
+            system_notices: true,
+            minimal_notch: true,
+            cat_visit_minutes: 15,
+            hidden_pages: Vec::new(),
+            calendar_sync: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,
+            whatsapp_width: 520.0,
             agent_completion_sound: true,
             agent_completion_volume: 100,
             auto_collapse: true,
-            hide_in_fullscreen: true,
+            tuck_in_fullscreen: false,
             display: String::new(),
             shortcut: "C".into(),
+            hide_shortcut: "H".into(),
             companion_shortcut_initialized: false,
             startup_initialized: false,
             outfit: Outfit::Auto,
@@ -372,6 +412,16 @@ pub struct Cikung {
     pub(crate) tools: Toolkit,
     monitor: Option<Monitor>,
     bluetooth: Option<crate::bluetooth::Monitor>,
+    system: Option<crate::system_notices::Monitor>,
+    /// Mac camera notch (width, height): the pill hangs below it, joined by a black neck.
+    pub(crate) camera_notch: Option<(f32, f32)>,
+    /// Whether the window lets clicks through to the menu bar beside the neck right now.
+    click_through: bool,
+    /// System output level and mute for the Music page's slider, and when they were read.
+    volume: Option<(f32, bool)>,
+    /// The volume HUD's level, mute and when it leaves the collapsed notch.
+    volume_hud: Option<(f32, bool, Instant)>,
+    volume_checked: Option<Instant>,
     whatsapp: Option<crate::whatsapp::Monitor>,
     notification_access: Option<std::sync::mpsc::Receiver<Result<crate::whatsapp::Access, String>>>,
     game: game::GameAssistant,
@@ -406,8 +456,12 @@ pub struct Cikung {
     fullscreen: bool,
     pub(crate) handle: Option<usize>,
     pub(crate) shortcut: Option<native::GlobalShortcut>,
+    pub(crate) hide_shortcut: Option<native::GlobalShortcut>,
+    /// Tucked away with the hide shortcut until it is pressed again.
+    hidden: bool,
     pub(crate) notices: VecDeque<Notice>,
     pub(crate) chat: Vec<ChatMessage>,
+    pub(crate) schedule: schedule::Schedule,
     pub(crate) draft: String,
     pub(crate) chat_busy: bool,
     pub(crate) pending: HashMap<u64, Pending>,
@@ -441,6 +495,9 @@ pub struct Cikung {
     pub(crate) selected_agent: Option<String>,
     pub(crate) qr: Option<(String, egui::TextureHandle)>,
     pub(crate) poke_until: Instant,
+    visits: visits::Visits,
+    /// A fullscreen app covers the notch's screen, as last checked.
+    screen_covered: bool,
     capture: Option<String>,
     audit: Option<String>,
     capture_requested: bool,
@@ -552,19 +609,17 @@ impl Cikung {
                 }
             }
         };
-        let shortcut = if launch.demo || launch.capture.is_some() {
-            None
+        let (shortcut, hide_shortcut) = if launch.demo || launch.capture.is_some() {
+            (None, None)
         } else {
-            native::GlobalShortcut::new(
-                cc.egui_ctx.clone(),
-                prefs
-                    .shortcut
-                    .bytes()
-                    .next()
-                    .unwrap_or(b'C')
-                    .to_ascii_uppercase(),
+            let register = |text: &str, fallback| {
+                native::GlobalShortcut::new(cc.egui_ctx.clone(), shortcut_letter(text, fallback))
+                    .ok()
+            };
+            (
+                register(&prefs.shortcut, b'C'),
+                register(&prefs.hide_shortcut, b'H'),
             )
-            .ok()
         };
         let requested = launch.page.as_deref().map(Page::parse).unwrap_or_default();
         let hub_page = launch
@@ -611,6 +666,12 @@ impl Cikung {
             tools,
             monitor,
             bluetooth: None,
+            system: None,
+            camera_notch: native::camera_notch(),
+            click_through: false,
+            volume: None,
+            volume_hud: None,
+            volume_checked: None,
             whatsapp: None,
             notification_access: None,
             game: game::GameAssistant::default(),
@@ -655,10 +716,13 @@ impl Cikung {
             fullscreen: false,
             handle: native::window_handle(cc),
             shortcut,
+            hide_shortcut,
+            hidden: false,
             notices,
             chat: vec![],
             draft: String::new(),
             chat_busy: false,
+            schedule: Default::default(),
             pending: HashMap::new(),
             next_request: 1,
             chat_generation: 0,
@@ -690,6 +754,8 @@ impl Cikung {
             selected_agent: None,
             qr: None,
             poke_until: Instant::now(),
+            visits: Default::default(),
+            screen_covered: false,
             capture: launch.capture,
             audit: launch.audit,
             capture_requested: false,
@@ -702,10 +768,18 @@ impl Cikung {
         id
     }
     pub(crate) fn toast(&mut self, title: impl Into<String>, text: impl Into<String>) {
+        self.toast_for(title, text, Duration::from_secs(7));
+    }
+    pub(crate) fn toast_for(
+        &mut self,
+        title: impl Into<String>,
+        text: impl Into<String>,
+        shown: Duration,
+    ) {
         self.notices.push_back(Notice {
             title: title.into(),
             text: text.into(),
-            until: Instant::now() + Duration::from_secs(7),
+            until: Instant::now() + shown,
         });
         while self.notices.len() > 8 {
             self.notices.pop_front();
@@ -752,6 +826,7 @@ impl Cikung {
         self.active_chat = None;
         self.chat_busy = false;
         self.chat.clear();
+        self.schedule.proposals.clear();
         self.draft.clear();
         self.pending
             .retain(|_, kind| !matches!(kind, Pending::Chat { .. }));
@@ -936,10 +1011,11 @@ impl Cikung {
             generation: self.chat_generation,
             config: serde_json::to_string(&self.prefs.chat).unwrap_or_default(),
         });
-        match self
-            .cloud
-            .send_chat(id, self.prefs.chat.clone(), self.chat.clone())
-        {
+        // The assistant learns the local time and how to propose tasks on every request.
+        let messages = std::iter::once(schedule::assistant_prompt(chrono::Local::now()))
+            .chain(self.chat.iter().cloned())
+            .collect();
+        match self.cloud.send_chat(id, self.prefs.chat.clone(), messages) {
             Ok(()) => {
                 self.chat_busy = true;
                 self.active_chat = Some(id);
@@ -951,21 +1027,25 @@ impl Cikung {
         }
     }
     fn tick(&mut self, ctx: &egui::Context) {
-        let whatsapp_enabled = self.prefs.whatsapp_notifications
+        // One Windows notification reader serves WhatsApp and the AI apps' finished replies.
+        let listening = (self.prefs.whatsapp_notifications
+            || self.prefs.desktop_apps.enabled.contains(&true))
             && cfg!(windows)
             && !self.demo
             && self.capture.is_none()
             && self.audit.is_none();
-        if !whatsapp_enabled
+        if !listening
             || self
                 .whatsapp
                 .as_ref()
                 .is_some_and(|m| m.preview != self.prefs.whatsapp_preview)
         {
             self.whatsapp = None;
+        }
+        if !self.prefs.whatsapp_notifications || self.whatsapp.is_none() {
             self.notices.retain(|n| n.title != "WhatsApp");
         }
-        if whatsapp_enabled && self.whatsapp.is_none() {
+        if listening && self.whatsapp.is_none() {
             self.whatsapp = Some(crate::whatsapp::Monitor::start(
                 ctx.clone(),
                 self.prefs.whatsapp_preview,
@@ -990,8 +1070,14 @@ impl Cikung {
         }
         let messages = self.whatsapp.as_mut().map(|m| m.poll()).unwrap_or_default();
         for message in messages {
-            // Mirror only in Cikung, without sending another Windows notification.
-            self.toast("WhatsApp", message.text(self.prefs.whatsapp_preview));
+            match message.source {
+                // Mirror only in Cikung, without sending another Windows notification.
+                crate::whatsapp::Source::WhatsApp if self.prefs.whatsapp_notifications => {
+                    self.toast("WhatsApp", message.text(self.prefs.whatsapp_preview));
+                }
+                crate::whatsapp::Source::WhatsApp => {}
+                crate::whatsapp::Source::App(target) => self.desktop_manager.notified(target),
+            }
         }
 
         let bluetooth_enabled = self.prefs.bluetooth_notifications
@@ -1023,6 +1109,31 @@ impl Cikung {
                 shell.notify("Bluetooth", &message);
             }
             self.toast("Bluetooth", message);
+        }
+        let system_enabled = self.prefs.system_notices
+            && cfg!(target_os = "windows")
+            && !self.demo
+            && self.capture.is_none()
+            && self.audit.is_none();
+        if system_enabled && self.system.is_none() {
+            self.system = Some(crate::system_notices::Monitor::start(ctx.clone()));
+        } else if !system_enabled {
+            self.system = None;
+        }
+        let events = self.system.as_ref().map(|m| m.poll()).unwrap_or_default();
+        for event in events {
+            match event {
+                crate::system_notices::Event::Notice(notice) => {
+                    // Caps Lock answers a key press; battery and internet changes stay longer.
+                    let seconds = if notice.title == "Caps Lock" { 2 } else { 6 };
+                    self.toast_for(notice.title, notice.text, Duration::from_secs(seconds));
+                }
+                // The collapsed notch shows the new level for a moment, like Nusa's HUD.
+                crate::system_notices::Event::Volume { level, muted } => {
+                    self.volume_hud =
+                        Some((level, muted, Instant::now() + Duration::from_millis(1600)));
+                }
+            }
         }
         self.agent_manager.poll();
         self.desktop_manager
@@ -1082,7 +1193,7 @@ impl Cikung {
                 shell.notify(&notice.title, &notice.message);
             }
             self.toast(notice.title, notice.message);
-            if !self.fullscreen {
+            if !self.fullscreen && !self.hidden {
                 self.expanded = true;
             }
         }
@@ -1144,10 +1255,14 @@ impl Cikung {
                                 continue;
                             }
                             match result {
-                                Ok(content) => self.chat.push(ChatMessage {
-                                    role: "assistant".into(),
-                                    content,
-                                }),
+                                Ok(content) => {
+                                    let (content, proposals) = schedule::take_proposals(&content);
+                                    self.schedule.proposals.extend(proposals);
+                                    self.chat.push(ChatMessage {
+                                        role: "assistant".into(),
+                                        content,
+                                    });
+                                }
                                 Err(error) => self.toast("Chat", error),
                             }
                         }
@@ -1207,11 +1322,17 @@ impl Cikung {
                     }
                     let automatic = self.auto_lyrics.automatic_request.take() == Some(request_id);
                     let result = result.and_then(|text| Lyrics::parse(&text));
-                    self.auto_lyrics.remember(identity.clone(), result.clone());
-                    if let Err(error) = self.apply_lyrics_result(identity, result)
-                        && !automatic
-                    {
-                        self.toast("Lyrics", error);
+                    // A miss is not kept: it was often only the player's stale duration.
+                    if result.is_ok() {
+                        self.auto_lyrics.remember(identity.clone(), result.clone());
+                    }
+                    if let Err(error) = self.apply_lyrics_result(identity, result) {
+                        if !automatic {
+                            self.toast("Lyrics", error);
+                        } else if self.auto_lyrics.retry_later(Instant::now()) {
+                            // "Getting your lyrics ready…" until the second try answers.
+                            self.auto_lyrics.error = None;
+                        }
                     }
                 }
                 CloudEvent::Transcription { request_id, result } => {
@@ -1237,8 +1358,13 @@ impl Cikung {
                         Err(e) => self.toast("Transcription", e),
                     }
                 }
+                event @ (CloudEvent::GoogleSignIn(_)
+                | CloudEvent::CalendarSaved { .. }
+                | CloudEvent::CalendarDeleted { .. }) => self.calendar_event(event),
             }
         }
+        self.sync_calendar(ctx);
+        self.cat_visit();
         if let Some(result) = self.dictation.poll() {
             match result {
                 Ok(text) => {
@@ -1337,6 +1463,17 @@ impl Cikung {
         {
             self.expanded = !self.expanded;
         }
+        // The open shortcut above still shows the panel while hidden.
+        if self
+            .hide_shortcut
+            .as_ref()
+            .is_some_and(|shortcut| shortcut.pressed())
+        {
+            self.hidden = !self.hidden;
+            if self.hidden {
+                self.expanded = false;
+            }
+        }
 
         if self.prefs.days.len() > 90
             && let Some(day) = self.prefs.days.keys().next().cloned()
@@ -1394,7 +1531,8 @@ impl Cikung {
             .as_ref()
             .is_some_and(|s| s.state == PlaybackState::Playing);
         let phase = self.started.elapsed().as_secs_f32();
-        let bounce = if self.prefs.reduced_motion {
+        let pose = self.visit_pose();
+        let bounce = if self.prefs.reduced_motion || pose.is_some() {
             0.0
         } else if self.poke_until > Instant::now() {
             (phase * 20.0).sin() * 2.0
@@ -1403,7 +1541,16 @@ impl Cikung {
         } else {
             (phase * 1.3).sin() * 0.35
         };
-        let cat_rect = rect.translate(Vec2::new(0.0, bounce)).shrink(1.0);
+        let base = rect.translate(Vec2::new(0.0, bounce)).shrink(1.0);
+        // A visit squashes and stretches the cat about its feet, outfit and all.
+        let cat_rect = pose.as_ref().map_or(base, |pose| {
+            let size = base.size() * pose.scale;
+            Rect::from_min_size(
+                Pos2::new(base.center().x - size.x / 2.0, base.bottom() - size.y),
+                size,
+            )
+            .translate(pose.offset)
+        });
         ui.painter().image(
             self.cat_textures[self.active_breed().index()].id(),
             cat_rect,
@@ -1411,6 +1558,10 @@ impl Cikung {
             Color32::WHITE,
         );
         Self::paint_outfit(ui, cat_rect, self.active_outfit());
+        if let Some(pose) = &pose {
+            visits::paint_hearts(ui.painter(), cat_rect, pose.t);
+            ui.ctx().request_repaint();
+        }
         if response.clicked() {
             self.poke_until = Instant::now() + Duration::from_secs(1);
             self.toast("Mrrp!", "Cikung is keeping you company.");
@@ -1428,20 +1579,86 @@ impl Cikung {
     }
 }
 
+/// The letter for Ctrl + Alt + letter: the first one typed, upper-cased.
+pub(crate) fn shortcut_letter(text: &str, fallback: u8) -> u8 {
+    text.bytes().next().unwrap_or(fallback).to_ascii_uppercase()
+}
+
+/// Registers Ctrl + Alt + `text`'s letter and writes back the letter used.
+pub(crate) fn register_shortcut(
+    ctx: &egui::Context,
+    text: &mut String,
+    fallback: u8,
+) -> Result<native::GlobalShortcut, String> {
+    let letter = shortcut_letter(text, fallback);
+    if !letter.is_ascii_alphabetic() {
+        return Err("Use a letter from A to Z.".into());
+    }
+    let shortcut = native::GlobalShortcut::new(ctx.clone(), letter)?;
+    *text = (letter as char).to_string();
+    Ok(shortcut)
+}
+
+/// Mac camera notch: the pill sits below the camera (`height`) and a neck the camera's
+/// width joins them. Without a camera notch the pill is the whole surface.
+fn notch_parts(surface: Rect, camera: Option<(f32, f32)>) -> (Rect, Option<Rect>) {
+    let Some((width, height)) = camera else {
+        return (surface, None);
+    };
+    let neck = Rect::from_min_size(
+        Pos2::new(surface.center().x - width / 2.0, surface.top()),
+        // A point of overlap so no anti-aliased seam shows between the neck and the pill.
+        Vec2::new(width, height + 1.0),
+    );
+    (surface.with_min_y(surface.top() + height), Some(neck))
+}
+
+/// The neck, with concave fillets where it meets the pill, so the camera notch flows into it.
+fn paint_neck(painter: &egui::Painter, neck: Rect, pill: Rect, color: Color32) {
+    painter.rect_filled(neck, 0.0, color);
+    let radius = 10.0_f32.min((pill.width() - neck.width()) / 2.0);
+    if radius < 1.0 {
+        return;
+    }
+    for (x, side) in [(neck.left(), -1.0_f32), (neck.right(), 1.0)] {
+        let corner = Pos2::new(x, pill.top());
+        let centre = Pos2::new(x + side * radius, pill.top() - radius);
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(corner, color);
+        for step in 0..=8_u32 {
+            // From up the neck's side round to along the pill's top edge.
+            let angle = std::f32::consts::FRAC_PI_2 * step as f32 / 8.0;
+            mesh.colored_vertex(
+                centre + Vec2::new(-side * radius * angle.cos(), radius * angle.sin()),
+                color,
+            );
+            if step > 0 {
+                mesh.add_triangle(0, step, step + 1);
+            }
+        }
+        painter.add(mesh);
+    }
+}
+
 impl eframe::App for Cikung {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0; 4]
     }
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if self.last_anchor.elapsed() > Duration::from_secs(1) {
-            let fullscreen = self.prefs.hide_in_fullscreen
-                && self.capture.is_none()
+            let covered = self.capture.is_none()
                 && self.audit.is_none()
                 && native::fullscreen_on_display(&self.prefs.display);
+            self.screen_covered = covered;
+            let fullscreen = covered && self.prefs.tuck_in_fullscreen;
             if fullscreen && !self.fullscreen {
                 self.expanded = false;
             }
             self.fullscreen = fullscreen;
+            // A fullscreen app can be topmost itself; step back in front of it.
+            if covered && !fullscreen && self.prefs.always_on_top {
+                native::raise(self.handle, true);
+            }
         }
         self.tick(ctx);
         // Mac menu-bar cat: Open Cikung, Settings… or Quit Cikung.
@@ -1460,14 +1677,32 @@ impl eframe::App for Cikung {
             ctx.content_rect().width()
         };
         let center = host_width / 2.0;
-        let old_surface = notch::aligned_surface_rect(center * 2.0, self.motion.sample(now), scale);
+        // Mac camera notch: the pill hangs below the camera, joined to it by a neck.
+        let camera = self.camera_notch;
+        let top = camera.map_or(0.0, |(_, height)| height);
+        let old_surface = notch::aligned_surface_rect(
+            center * 2.0,
+            self.motion.sample(now) + Vec2::new(0.0, top),
+            scale,
+        );
+        let (old_pill, old_neck) = notch_parts(old_surface, camera);
         let pointer = native::pointer_in_window(self.handle, scale)
             .or_else(|| ctx.input(|i| i.pointer.hover_pos()));
-        let inside = pointer.is_some_and(|p| {
-            old_surface
-                .expand(if self.expanded { 6.0 } else { 0.0 })
-                .contains(p)
-        });
+        let on_notch = |p: Pos2, grow: f32| {
+            old_pill.expand(grow).contains(p) || old_neck.is_some_and(|neck| neck.contains(p))
+        };
+        let inside = pointer.is_some_and(|p| on_notch(p, if self.expanded { 6.0 } else { 0.0 }));
+        // Beside the neck the window is see-through over the menu bar: let those clicks pass.
+        let through = old_neck.is_some()
+            && pointer.is_some_and(|p| old_surface.contains(p) && !on_notch(p, 0.0));
+        if through != self.click_through {
+            native::set_click_through(self.handle, through);
+            self.click_through = through;
+        }
+        if through {
+            // A pass-through window gets no mouse events; keep watching the pointer.
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
         let held = self.capture.is_some()
             || self.file_hover.is_some()
             || egui::Popup::is_any_open(ctx)
@@ -1480,7 +1715,10 @@ impl eframe::App for Cikung {
             inside,
             self.expanded,
             HoverPolicy {
-                enabled: self.prefs.hover_open && self.capture.is_none() && !self.fullscreen,
+                enabled: self.prefs.hover_open
+                    && self.capture.is_none()
+                    && !self.fullscreen
+                    && !self.hidden,
                 auto_close: self.prefs.auto_collapse,
                 pinned: false,
                 held,
@@ -1492,11 +1730,45 @@ impl eframe::App for Cikung {
         } else {
             self.page.height()
         };
+        // A long synced line or WhatsApp message widens the pill to show all of it: the cat,
+        // clock, music bars and padding take 190 pt beside the 12.5 pt line (see
+        // `lyric_ticker`).
+        let fit = |line: String, min: f32, max: f32| {
+            let text = ctx.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(line, egui::FontId::proportional(12.5), Color32::WHITE)
+                    .size()
+                    .x
+            });
+            (text + 198.0).clamp(min, max.max(min))
+        };
+        let message_width = (!self.expanded)
+            .then(|| self.header_notice())
+            .flatten()
+            .map(|n| {
+                fit(
+                    n.text.clone(),
+                    notch::COLLAPSED.x,
+                    self.prefs.whatsapp_width,
+                )
+            });
+        let lyric_width = (!self.demo && !self.expanded)
+            .then(|| self.current_lyric().map(str::to_owned))
+            .flatten()
+            .map(|line| fit(line, notch::COLLAPSED_LYRIC.x, notch::LYRIC_MAX_WIDTH));
         let size = self.motion.retarget(
             if self.expanded {
                 Vec2::new(notch::OPEN_WIDTH, page_height)
-            } else if !self.demo && self.current_lyric().is_some() {
-                notch::COLLAPSED_LYRIC
+            } else if self.minimal_idle() {
+                // Same order as `header`: paused music shows the minimal pill, not the lyric.
+                notch::COLLAPSED_MINIMAL
+            } else if let Some(width) = message_width
+                .or(lyric_width)
+                .filter(|_| self.volume_hud_level().is_none())
+            {
+                // Same order as `header`: a message shows over the lyric. The volume HUD
+                // keeps the standard pill so its bar stays a sensible length.
+                Vec2::new(width, notch::COLLAPSED_LYRIC.y)
             } else {
                 notch::COLLAPSED
             },
@@ -1507,7 +1779,7 @@ impl eframe::App for Cikung {
         let host_size = if cfg!(target_os = "windows") {
             notch::HOST
         } else {
-            size
+            size + Vec2::new(0.0, top)
         };
         // macOS: AppKit pins the window to the top centre, above the menu bar.
         #[cfg(target_os = "macos")]
@@ -1538,7 +1810,9 @@ impl eframe::App for Cikung {
         }
         self.was_open = self.expanded;
         let center = host_width / 2.0;
-        let surface = notch::aligned_surface_rect(center * 2.0, size, scale);
+        let surface = notch::aligned_surface_rect(center * 2.0, size + Vec2::new(0.0, top), scale);
+        // The Windows notch itself; on a Mac it hangs below the camera's neck.
+        let (pill, neck) = notch_parts(surface, camera);
         let radius = 15.0 + openness * 7.0;
         // The notch draws in the chosen theme; Settings is reset to dark further down.
         set_painting_theme(self.prefs.theme);
@@ -1565,23 +1839,24 @@ impl eframe::App for Cikung {
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 theme_visuals(ui, self.prefs.theme);
-                notch::paint_surface(
-                    ui.painter(),
-                    surface,
-                    radius,
-                    base,
-                    Color32::from_rgb(r, g, b),
-                );
+                if let Some(neck) = neck {
+                    paint_neck(ui.painter(), neck, pill, base);
+                }
+                notch::paint_surface(ui.painter(), pill, radius, base, Color32::from_rgb(r, g, b));
+                if self.prefs.theme == Theme::Glass {
+                    notch::paint_glass(ui.painter(), pill, radius);
+                }
+                // Never taller than the pill, so the minimal notch's row stays centred.
                 let header_rect = Rect::from_min_size(
-                    surface.min + Vec2::new(14.0, 2.0),
-                    Vec2::new((size.x - 28.0).max(1.0), 36.0),
+                    pill.min + Vec2::new(14.0, 2.0),
+                    Vec2::new((size.x - 28.0).max(1.0), (size.y - 4.0).clamp(1.0, 36.0)),
                 );
                 let mut header = ui.new_child(
                     egui::UiBuilder::new()
                         .id_salt("notch-header")
                         .max_rect(header_rect),
                 );
-                header.set_clip_rect(surface.intersect(ui.clip_rect()));
+                header.set_clip_rect(pill.intersect(ui.clip_rect()));
                 self.header(&mut header);
                 let reveal = ((openness - 0.3) / 0.7).clamp(0.0, 1.0);
                 let opacity = reveal * reveal * (3.0 - 2.0 * reveal);
@@ -1598,16 +1873,14 @@ impl eframe::App for Cikung {
                     // and opacity change; labels and controls never reflow mid-hover.
                     let start =
                         ctx.graphics(|g| g.get(ui.layer_id()).map_or(0, |l| l.next_idx().0));
-                    let clip = surface
-                        .shrink2(Vec2::new(3.0, 5.0))
-                        .intersect(ui.clip_rect());
+                    let clip = pill.shrink2(Vec2::new(3.0, 5.0)).intersect(ui.clip_rect());
                     self.content_motion
                         .paint_previous(ui.painter(), clip, opacity, &progress);
                     let body_rect = Rect::from_min_size(
                         Pos2::new(
                             // 26 px sides leave room for the carousel arrows.
                             (host_width - notch::OPEN_WIDTH) / 2.0 + 26.0 + progress.offset,
-                            50.0 + 6.0 * (1.0 - openness),
+                            top + 50.0 + 6.0 * (1.0 - openness),
                         ),
                         Vec2::new(notch::OPEN_WIDTH - 52.0, page_height - 62.0),
                     );
@@ -1616,11 +1889,7 @@ impl eframe::App for Cikung {
                             .id_salt("notch-body")
                             .max_rect(body_rect),
                     );
-                    body.set_clip_rect(
-                        surface
-                            .shrink2(Vec2::new(3.0, 5.0))
-                            .intersect(ui.clip_rect()),
-                    );
+                    body.set_clip_rect(pill.shrink2(Vec2::new(3.0, 5.0)).intersect(ui.clip_rect()));
                     body.multiply_opacity(opacity * progress.opacity);
                     if !self.expanded || openness <= 0.98 || progress.moving {
                         body.disable();
@@ -1632,13 +1901,13 @@ impl eframe::App for Cikung {
                         start,
                         self.artwork.as_ref().map(|(_, texture)| texture.clone()),
                     );
-                    self.carousel_arrows(ui, surface, opacity);
+                    self.carousel_arrows(ui, pill, opacity);
                 }
             });
         if inside && ctx.input(|i| i.pointer.any_click()) {
             self.hover.interact();
         }
-        let tucked = self.fullscreen && !self.expanded;
+        let tucked = (self.fullscreen || self.hidden) && !self.expanded;
         let shape = if tucked {
             Rect::ZERO
         } else if egui::Popup::is_any_open(ctx) {

@@ -127,6 +127,26 @@ impl Cikung {
         card(ui, |ui| {
             heading(
                 ui,
+                "Features in your notch",
+                "Turn off what you don't use: it leaves the page dots and the all-tools grid.",
+            );
+            for (page, caption) in super::notch_ui::TOOLS {
+                let mut shown = !self.prefs.hidden_pages.contains(&page);
+                if ui
+                    .checkbox(&mut shown, format!("{} · {caption}", page.label()))
+                    .changed()
+                {
+                    if shown {
+                        self.prefs.hidden_pages.retain(|hidden| *hidden != page);
+                    } else {
+                        self.prefs.hidden_pages.push(page);
+                    }
+                }
+            }
+        });
+        card(ui, |ui| {
+            heading(
+                ui,
                 "At home in your notch",
                 "A small companion at the top of your screen.",
             );
@@ -140,9 +160,31 @@ impl Cikung {
                 "Keep the notch above other windows",
             );
             ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
-                ui.checkbox(&mut self.prefs.hide_in_fullscreen, "Tuck away during fullscreen apps")
-                    .on_hover_text("Hides the collapsed notch during borderless fullscreen on its screen. Ctrl+Alt+C still opens it on request.");
+                ui.checkbox(&mut self.prefs.tuck_in_fullscreen, "Tuck away during fullscreen apps")
+                    .on_hover_text("Off: the notch stays in front of fullscreen apps such as a YouTube video. On: it hides the collapsed notch during borderless fullscreen on its screen; Ctrl+Alt+C still opens it.");
             });
+            ui.checkbox(
+                &mut self.prefs.minimal_notch,
+                "Minimal notch: just the cat and the time while nothing plays",
+            );
+            ui.horizontal(|ui| {
+                ui.label("Cikung visits");
+                let minutes = self.prefs.cat_visit_minutes;
+                egui::ComboBox::from_id_salt("cat-visits")
+                    .selected_text(
+                        super::visits::VISIT_MINUTES
+                            .iter()
+                            .find(|(m, _)| *m == minutes)
+                            .map_or_else(|| format!("Every {minutes} minutes"), |(_, n)| (*n).into()),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (m, name) in super::visits::VISIT_MINUTES {
+                            ui.selectable_value(&mut self.prefs.cat_visit_minutes, m, name);
+                        }
+                    });
+            })
+            .response
+            .on_hover_text("Every so often Cikung hops, wiggles and says hello in the notch. It waits while the panel is open, another message shows, you focus or record, or a fullscreen app is in front.");
             if ui
                 .checkbox(&mut self.autostart, "Start Cikung when I sign in")
                 .changed()
@@ -208,6 +250,20 @@ impl Cikung {
                 }
             }
             ui.label(RichText::new("Windows Bluetooth and Bluetooth LE · checks every 3 seconds. Existing connections are quiet at startup.").size(11.0).color(muted()));
+        });
+        card(ui, |ui| {
+            heading(
+                ui,
+                "Battery, internet, Caps Lock and volume",
+                "A heads-up in the notch when your charger, battery, connection, Caps Lock or volume changes.",
+            );
+            ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
+                ui.checkbox(
+                    &mut self.prefs.system_notices,
+                    "Show battery, internet, Caps Lock and volume notices",
+                );
+            });
+            ui.label(RichText::new("Charger connected or unplugged, low battery at 20 %, critical at 10 %, fully charged; internet connected, no internet or disconnected; Caps Lock on or off; the volume level with an animated bar when it changes. Windows only. The state at startup is quiet.").size(11.0).color(muted()));
         });
         card(ui, |ui| {
             heading(
@@ -360,7 +416,10 @@ impl Cikung {
             Phone => card(ui, |ui| self.phone(ui)),
             Notes => card(ui, |ui| self.notes(ui)),
             Focus => card(ui, |ui| self.focus(ui)),
-            Tasks => card(ui, |ui| self.tasks(ui)),
+            Tasks => {
+                card(ui, |ui| self.tasks(ui));
+                card(ui, |ui| self.google_calendar_settings(ui));
+            }
             Water => card(ui, |ui| self.water(ui)),
             Game => card(ui, |ui| self.game_panel(ui)),
             Shortcuts => card(ui, |ui| self.shortcut_settings(ui)),
@@ -455,26 +514,36 @@ impl Cikung {
                     .desired_width(25.0),
             );
             if ui.button("Apply").clicked() {
-                let letter = self
-                    .prefs
-                    .shortcut
-                    .bytes()
-                    .next()
-                    .unwrap_or(b'C')
-                    .to_ascii_uppercase();
-                if letter.is_ascii_alphabetic() {
-                    self.shortcut = None;
-                    match native::GlobalShortcut::new(ui.ctx().clone(), letter) {
-                        Ok(shortcut) => {
-                            self.shortcut = Some(shortcut);
-                            self.prefs.shortcut = (letter as char).to_string();
-                            self.toast("Shortcut", "Global shortcut updated.");
-                        }
-                        Err(e) => self.toast("Shortcut", e),
+                // Unregister the old letter first so the same one can be applied again.
+                self.shortcut = None;
+                match register_shortcut(ui.ctx(), &mut self.prefs.shortcut, b'C') {
+                    Ok(shortcut) => {
+                        self.shortcut = Some(shortcut);
+                        self.toast("Shortcut", "Global shortcut updated.");
                     }
+                    Err(e) => self.toast("Shortcut", e),
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Hide or show Cikung: Ctrl + Alt +");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.prefs.hide_shortcut)
+                    .char_limit(1)
+                    .desired_width(25.0),
+            );
+            if ui.button("Apply").clicked() {
+                self.hide_shortcut = None;
+                match register_shortcut(ui.ctx(), &mut self.prefs.hide_shortcut, b'H') {
+                    Ok(shortcut) => {
+                        self.hide_shortcut = Some(shortcut);
+                        self.toast("Shortcut", "Hide shortcut updated.");
+                    }
+                    Err(e) => self.toast("Shortcut", e),
+                }
+            }
+        });
+        ui.label(RichText::new("For games and full-screen work: the notch tucks away completely until you press it again. The global shortcut above still opens the panel while it is hidden.").size(11.0).color(muted()));
 
         ui.add_space(18.0);
         ui.label("Escape · close the current panel");
@@ -602,6 +671,23 @@ impl Cikung {
                         &mut self.prefs.whatsapp_preview,
                         "Show sender and message preview",
                     );
+                    // The pill grows with the message up to this width; longer ones are cut.
+                    ui.horizontal(|ui| {
+                        ui.label("Widest message");
+                        let width = self.prefs.whatsapp_width;
+                        egui::ComboBox::from_id_salt("whatsapp-width")
+                            .selected_text(
+                                notch::MESSAGE_WIDTHS
+                                    .iter()
+                                    .find(|(w, _)| *w == width)
+                                    .map_or_else(|| format!("{width:.0}"), |(_, n)| (*n).into()),
+                            )
+                            .show_ui(ui, |ui| {
+                                for (w, name) in notch::MESSAGE_WIDTHS {
+                                    ui.selectable_value(&mut self.prefs.whatsapp_width, w, name);
+                                }
+                            });
+                    });
                 });
             });
             ui.add_space(10.0);

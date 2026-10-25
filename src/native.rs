@@ -361,9 +361,46 @@ pub fn volume(command: i32) {
         }
     }
 }
+/// Camera notch of the main Mac display as (width, height) in points; `None` without one.
+#[cfg(target_os = "macos")]
+pub fn camera_notch() -> Option<(f32, f32)> {
+    use objc2::{runtime::NSObjectProtocol, sel};
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::MainThreadMarker;
+    let screen = NSScreen::mainScreen(MainThreadMarker::new()?)?;
+    // safeAreaInsets arrived in macOS 12; the bundle still starts on 11.
+    if !screen.respondsToSelector(sel!(safeAreaInsets)) {
+        return None;
+    }
+    unsafe {
+        let top = screen.safeAreaInsets().top;
+        let width = screen.frame().size.width
+            - screen.auxiliaryTopLeftArea().size.width
+            - screen.auxiliaryTopRightArea().size.width;
+        (top > 0.0 && width > 0.0).then_some((width as f32, top as f32))
+    }
+}
+#[cfg(not(target_os = "macos"))]
+pub fn camera_notch() -> Option<(f32, f32)> {
+    None
+}
+
+/// Lets clicks through to whatever is below, such as the menu bar beside the notch's neck
+/// where the window is see-through. Mac only.
+#[cfg(target_os = "macos")]
+pub fn set_click_through(handle: Option<usize>, through: bool) {
+    use objc2_app_kit::NSView;
+    let Some(handle) = handle else { return };
+    let view = unsafe { &*(handle as *const NSView) };
+    if let Some(window) = view.window() {
+        window.setIgnoresMouseEvents(through);
+    }
+}
+#[cfg(not(target_os = "macos"))]
+pub fn set_click_through(_handle: Option<usize>, _through: bool) {}
+
 /// Pins the notch window to the top centre of its Mac display, above the menu bar and on
-/// every Space. It is the Windows notch as is; ponytail: a MacBook camera notch hides the
-/// middle of its row, which a camera-aware layout would need wider wings to avoid.
+/// every Space. With a camera notch the app draws a neck there and the pill below it.
 #[cfg(target_os = "macos")]
 pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
     use objc2_app_kit::{NSMainMenuWindowLevel, NSScreen, NSView, NSWindowCollectionBehavior};
@@ -589,6 +626,82 @@ pub fn volume(command: i32) {
 }
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn volume(_command: i32) {}
+
+/// The default speakers' level (0–1) and mute, for the Music page's volume slider.
+#[cfg(target_os = "windows")]
+pub fn system_volume() -> Option<(f32, bool)> {
+    let volume = endpoint_volume()?;
+    unsafe {
+        Some((
+            volume.GetMasterVolumeLevelScalar().ok()?,
+            volume.GetMute().ok()?.as_bool(),
+        ))
+    }
+}
+#[cfg(target_os = "windows")]
+pub fn set_system_volume(level: f32, muted: bool) {
+    if let Some(volume) = endpoint_volume() {
+        unsafe {
+            let _ = volume.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null());
+            let _ = volume.SetMute(muted, std::ptr::null());
+        }
+    }
+}
+#[cfg(target_os = "windows")]
+fn endpoint_volume() -> Option<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+    use windows::Win32::{
+        Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eConsole, eRender},
+        System::Com::{CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx},
+    };
+    unsafe {
+        // The UI thread already has an apartment; this covers a call from anywhere else.
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+        device.Activate(CLSCTX_ALL, None).ok()
+    }
+}
+/// `None` when the output has no software volume (some HDMI/digital outputs).
+#[cfg(target_os = "macos")]
+pub fn system_volume() -> Option<(f32, bool)> {
+    let output = std::process::Command::new("/usr/bin/osascript")
+        .args([
+            "-e",
+            "set s to get volume settings",
+            "-e",
+            "(output volume of s as text) & \",\" & (output muted of s as text)",
+        ])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let (level, muted) = text.trim().split_once(',')?;
+    Some((
+        level.trim().parse::<f32>().ok()? / 100.0,
+        muted.trim() == "true",
+    ))
+}
+#[cfg(target_os = "macos")]
+pub fn set_system_volume(level: f32, muted: bool) {
+    let script = format!(
+        "set volume output volume {} output muted {muted}",
+        (level.clamp(0.0, 1.0) * 100.0).round() as i32
+    );
+    if let Ok(mut child) = std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", &script])
+        .spawn()
+    {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn system_volume() -> Option<(f32, bool)> {
+    None
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn set_system_volume(_level: f32, _muted: bool) {}
 
 #[cfg(target_os = "windows")]
 pub struct GlobalShortcut {

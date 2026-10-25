@@ -7,13 +7,28 @@ use eframe::egui::{
 pub const COLLAPSED: Vec2 = vec2(252.0, 40.0);
 /// Collapsed notch widened for a live lyric line, like Nusa's music pill.
 pub const COLLAPSED_LYRIC: Vec2 = vec2(360.0, 40.0);
-/// Open panel width. The host is wider so the spring can overshoot without clipping.
+/// Nusa's minimal notch while nothing plays: just the cat and the time.
+pub const COLLAPSED_MINIMAL: Vec2 = vec2(120.0, 32.0);
+/// Widest the lyric pill grows to fit a long line; a longer line is cut.
+pub const LYRIC_MAX_WIDTH: f32 = 760.0;
+/// Widths a WhatsApp message may widen the pill to, chosen in Settings → Notifications.
+pub const MESSAGE_WIDTHS: [(f32, &str); 4] = [
+    (400.0, "Compact · 400"),
+    (520.0, "Medium · 520"),
+    (640.0, "Wide · 640"),
+    (LYRIC_MAX_WIDTH, "Widest · 760"),
+];
+/// Open panel width. The host is wider than the open panel and the widest lyric pill, so
+/// the spring can overshoot without clipping.
 pub const OPEN_WIDTH: f32 = 580.0;
-pub const HOST: Vec2 = vec2(604.0, 480.0);
+pub const HOST: Vec2 = vec2(784.0, 480.0);
 /// Smallest squash the collapse undershoot may reach.
-const SQUASH: Vec2 = vec2(COLLAPSED.x - 28.0, COLLAPSED.y - 6.0);
+const SQUASH: Vec2 = vec2(COLLAPSED_MINIMAL.x - 28.0, COLLAPSED_MINIMAL.y - 6.0);
 /// Underdamped spring measured from Nusa 1.0's notch: ~7% overshoot, peak after ~250 ms.
 const DAMPING: f32 = 0.65;
+/// Between two collapsed shapes (a longer lyric, pausing) the notch eases with no visible
+/// bounce: about 0.06 % overshoot instead of 7 %.
+const GENTLE: f32 = 0.92;
 const FREQUENCY: f32 = 17.5;
 
 pub struct Motion {
@@ -21,6 +36,7 @@ pub struct Motion {
     velocity: Vec2,
     target: Vec2,
     started: f64,
+    damping: f32,
 }
 impl Motion {
     pub fn new(size: Vec2) -> Self {
@@ -29,13 +45,18 @@ impl Motion {
             velocity: Vec2::ZERO,
             target: size,
             started: 0.0,
+            damping: DAMPING,
         }
+    }
+    /// Where the notch is heading.
+    pub fn target(&self) -> Vec2 {
+        self.target
     }
     fn state(&self, now: f64) -> (Vec2, Vec2) {
         // Analytic underdamped spring keeps velocity through reversals, independent of frame rate.
         let t = (now - self.started).max(0.0) as f32;
-        let decay_rate = DAMPING * FREQUENCY;
-        let damped = FREQUENCY * (1.0 - DAMPING * DAMPING).sqrt();
+        let decay_rate = self.damping * FREQUENCY;
+        let damped = FREQUENCY * (1.0 - self.damping * self.damping).sqrt();
         let a = self.from - self.target;
         let b = (self.velocity + decay_rate * a) / damped;
         let (sin, cos) = (damped * t).sin_cos();
@@ -60,6 +81,8 @@ impl Motion {
         self.state(now).0
     }
     pub fn retarget(&mut self, target: Vec2, now: f64, reduced_motion: bool) -> Vec2 {
+        // Collapsed shapes are under 100 pt tall; opening and closing keep Nusa's bounce.
+        let gentle = target.y < 100.0 && self.target.y < 100.0;
         if reduced_motion {
             self.from = target;
             self.velocity = Vec2::ZERO;
@@ -69,6 +92,7 @@ impl Motion {
             (self.from, self.velocity) = self.state(now);
             self.target = target;
             self.started = now;
+            self.damping = if gentle { GENTLE } else { DAMPING };
         }
         self.sample(now)
     }
@@ -83,6 +107,36 @@ impl Motion {
 }
 
 /// `base` surface that warms into `tint` toward its bottom edge, like Nusa's cover-tinted notch.
+/// The glass theme over its smoked surface: a sheen fading down from the top edge, and a
+/// faint light rim around the rounded bottom.
+pub fn paint_glass(painter: &Painter, rect: Rect, radius: f32) {
+    if rect.height() < 4.0 {
+        return;
+    }
+    let band = (rect.height() * 0.45).min(rect.height() - radius).max(0.0);
+    let mut sheen = Mesh::default();
+    let top = Color32::from_white_alpha(30);
+    sheen.colored_vertex(rect.left_top(), top);
+    sheen.colored_vertex(rect.right_top(), top);
+    sheen.colored_vertex(pos2(rect.left(), rect.top() + band), Color32::TRANSPARENT);
+    sheen.colored_vertex(pos2(rect.right(), rect.top() + band), Color32::TRANSPARENT);
+    sheen.add_triangle(0, 1, 2);
+    sheen.add_triangle(1, 3, 2);
+    painter.add(sheen);
+    let corner = radius.round() as u8;
+    painter.rect_stroke(
+        rect,
+        CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: corner,
+            se: corner,
+        },
+        eframe::egui::Stroke::new(1.0_f32, Color32::from_white_alpha(42)),
+        eframe::egui::StrokeKind::Inside,
+    );
+}
+
 pub fn paint_surface(painter: &Painter, rect: Rect, radius: f32, base: Color32, tint: Color32) {
     let corner = radius.round() as u8;
     painter.rect_filled(
