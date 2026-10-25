@@ -459,6 +459,8 @@ pub struct Cikung {
     pub(crate) hide_shortcut: Option<native::GlobalShortcut>,
     /// Tucked away with the hide shortcut until it is pressed again.
     hidden: bool,
+    /// Whether Claude Code's Stop hook runs Cikung, read from its settings once.
+    claude_hook: Option<bool>,
     pub(crate) notices: VecDeque<Notice>,
     pub(crate) chat: Vec<ChatMessage>,
     pub(crate) schedule: schedule::Schedule,
@@ -718,6 +720,7 @@ impl Cikung {
             shortcut,
             hide_shortcut,
             hidden: false,
+            claude_hook: None,
             notices,
             chat: vec![],
             draft: String::new(),
@@ -1149,7 +1152,12 @@ impl Cikung {
             }
         }
         if let Some(page) = self.requests.poll() {
-            self.open_request(page.as_deref());
+            if page.as_deref() == Some(crate::claude_hook::FLAG) {
+                self.desktop_manager
+                    .hook_finished(crate::desktop_apps::Target::Claude);
+            } else {
+                self.open_request(page.as_deref());
+            }
         }
         if !matches!(self.page, Page::Style | Page::Settings) {
             self.last_feature = self.page;

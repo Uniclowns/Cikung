@@ -1,7 +1,13 @@
 //! Desktop connections use the apps' visible Windows accessibility interface.
 //! No CLI sessions, account credentials, private databases, or browser debugging ports.
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::{
+    collections::VecDeque,
+    sync::mpsc::{self, Receiver, Sender},
+    time::{Duration, Instant},
+};
+/// How long a hook announcement waits for the app's own late signal for the same turn.
+const HOOK_MEMORY: Duration = Duration::from_secs(30 * 60);
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
@@ -162,6 +168,11 @@ pub struct Manager {
     completed: Vec<Target>,
     /// A Windows notification already announced this reply.
     notified: [bool; 2],
+    /// Turns Claude Code's Stop hook announced; the app's own signal for each (its
+    /// notification, or its Stop button going) is skipped once.
+    hooked: [VecDeque<Instant>; 2],
+    /// When the app's own signals last announced a turn, so a hook just after is not a second.
+    announced: [Option<Instant>; 2],
 }
 impl Manager {
     pub fn new(ctx: eframe::egui::Context, active: bool, enabled: [bool; 2]) -> Self {
@@ -212,7 +223,32 @@ impl Manager {
             completion: Default::default(),
             completed: vec![],
             notified: [false; 2],
+            hooked: Default::default(),
+            announced: [None; 2],
         }
+    }
+    /// Claude Code's Stop hook says a turn finished. Its process is not paused when the screen
+    /// is off, unlike the app's window, so this is often the first and only timely signal.
+    pub fn hook_finished(&mut self, target: Target) {
+        let index = target.index();
+        let now = Instant::now();
+        if self.announced[index].is_some_and(|at| now.duration_since(at) < Duration::from_secs(15))
+        {
+            return;
+        }
+        self.completed.push(target);
+        self.hooked[index].retain(|at| now.duration_since(*at) < HOOK_MEMORY);
+        self.hooked[index].push_back(now);
+    }
+    /// Uses up one turn the hook already announced, if any.
+    fn take_hooked(&mut self, index: usize) -> bool {
+        let now = Instant::now();
+        self.hooked[index].retain(|at| now.duration_since(*at) < HOOK_MEMORY);
+        self.hooked[index].pop_front().is_some()
+    }
+    fn announce(&mut self, target: Target) {
+        self.completed.push(target);
+        self.announced[target.index()] = Some(Instant::now());
     }
     /// The app posted a Windows notification, as it does when a reply finishes while it is in
     /// the background. Its window stops updating there, so the accessibility read would only
@@ -222,7 +258,9 @@ impl Manager {
         if !self.enabled[index] {
             return;
         }
-        self.completed.push(target);
+        if !self.take_hooked(index) {
+            self.announce(target);
+        }
         // In front, the window keeps updating, so the notification is about another chat
         // (a parallel session) and this chat's own completion must still be announced.
         self.notified[index] = !self.apps[index]
@@ -254,7 +292,8 @@ impl Manager {
     }
     pub fn poll(&mut self) -> Vec<(bool, Result<(), String>)> {
         let mut results = Vec::new();
-        for event in self.rx.try_iter() {
+        let events: Vec<_> = self.rx.try_iter().collect();
+        for event in events {
             match event {
                 Event::Snapshot(apps) => {
                     for app in apps.iter() {
@@ -265,8 +304,9 @@ impl Manager {
                         }
                         if self.completion[index].observe(app, self.enabled[index])
                             && !std::mem::take(&mut self.notified[index])
+                            && !self.take_hooked(index)
                         {
-                            self.completed.push(app.target);
+                            self.announce(app.target);
                         }
                     }
                     self.apps = *apps;
@@ -528,6 +568,41 @@ mod tests {
         // A paused link ignores the app's notifications.
         manager.configure([true, false]);
         manager.notified(Target::Codex);
+        assert!(manager.take_completions().is_empty());
+    }
+    #[test]
+    fn a_hooked_turn_is_announced_once_whichever_signal_comes_later() {
+        let mut manager = Manager::new(eframe::egui::Context::default(), false, [true; 2]);
+        let (tx, rx) = mpsc::channel();
+        manager.rx = rx;
+        let send = |state| {
+            tx.send(Event::Snapshot(Box::new([
+                AppSnapshot::empty(Target::Claude, State::Closed, ""),
+                completion_snapshot(state, 1),
+            ])))
+            .unwrap();
+        };
+        // Screen off: the hook announces, then the app's notification arrives late.
+        manager.hook_finished(Target::Codex);
+        assert_eq!(manager.take_completions(), vec![Target::Codex]);
+        manager.notified(Target::Codex);
+        assert!(manager.take_completions().is_empty());
+        // In front: the hook announces, then the Stop button goes; still one.
+        send(State::Working);
+        manager.poll();
+        manager.notified = [false; 2];
+        manager.hook_finished(Target::Codex);
+        send(State::Ready);
+        send(State::Ready);
+        manager.poll();
+        assert_eq!(manager.take_completions(), vec![Target::Codex]);
+        // The app first, then a hook moments later: no second announcement.
+        send(State::Working);
+        send(State::Ready);
+        send(State::Ready);
+        manager.poll();
+        assert_eq!(manager.take_completions(), vec![Target::Codex]);
+        manager.hook_finished(Target::Codex);
         assert!(manager.take_completions().is_empty());
     }
     #[test]

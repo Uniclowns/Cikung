@@ -8,6 +8,7 @@ mod app;
 mod bluetooth;
 mod bridge;
 mod cats;
+mod claude_hook;
 mod cloud;
 mod completion_sound;
 mod desktop_apps;
@@ -32,6 +33,11 @@ use eframe::egui;
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Claude Code's Stop hook: tell a running Cikung a turn finished; never start one.
+    if args.iter().any(|a| a == claude_hook::FLAG) {
+        let _ = instance::show(Some(claude_hook::FLAG));
+        return Ok(());
+    }
     #[cfg(target_os = "windows")]
     if setup::run(&args) {
         return Ok(());

@@ -504,6 +504,54 @@ impl Cikung {
             });
         }
     }
+    /// Claude Code's Stop hook, so finished turns chime even while the screen is off.
+    fn claude_hook_settings(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Claude Code, even with the screen off").strong());
+        ui.label(RichText::new("Claude App pauses its window while the screen is off, so its finished turns reach Cikung late. Claude Code's Stop hook tells Cikung at once, for the Code tab and the CLI. Connect adds one hook to ~/.claude/settings.json after saving a backup beside it; Disconnect removes only that hook.").size(11.0).color(muted()));
+        if self.demo || self.capture.is_some() || self.audit.is_some() {
+            ui.label(RichText::new("Preview · Claude's settings are not touched.").color(muted()));
+            return;
+        }
+        let connected = *self
+            .claude_hook
+            .get_or_insert_with(crate::claude_hook::connected);
+        ui.horizontal_wrapped(|ui| {
+            if connected {
+                ui.label(RichText::new("Connected").color(accent()));
+            }
+            let connect = if connected {
+                "Reconnect"
+            } else {
+                "Connect Claude Code"
+            };
+            if ui
+                .button(connect)
+                .on_hover_text("Points the hook at this copy of Cikung.")
+                .clicked()
+            {
+                let result = crate::claude_hook::connect();
+                self.claude_hook = Some(crate::claude_hook::connected());
+                self.report_hook(result, "Claude Code connected");
+            }
+            if connected && ui.button("Disconnect").clicked() {
+                let result = crate::claude_hook::disconnect();
+                self.claude_hook = Some(crate::claude_hook::connected());
+                self.report_hook(result, "Claude Code disconnected");
+            }
+        });
+    }
+
+    fn report_hook(&mut self, result: Result<Option<std::path::PathBuf>, String>, done: &str) {
+        match result {
+            Ok(Some(backup)) => self.toast(
+                "Claude Code",
+                format!("{done}. Backup: {}", backup.display()),
+            ),
+            Ok(None) => self.toast("Claude Code", format!("{done}. Nothing needed changing.")),
+            Err(error) => self.toast("Claude Code", error),
+        }
+    }
+
     fn shortcut_settings(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Keyboard shortcuts", "Keep Cikung one keystroke away.");
         ui.horizontal(|ui| {
@@ -654,6 +702,8 @@ impl Cikung {
                 );
             }
             ui.label(RichText::new("Link desktop apps in Agents. Claude Code needs its Cikung hook connection. The sound plays once when a turn finishes; starting Cikung or opening an idle app stays quiet.").size(11.0).color(muted()));
+            ui.add_space(12.0);
+            self.claude_hook_settings(ui);
         });
         card(ui, |ui| {
             heading(
