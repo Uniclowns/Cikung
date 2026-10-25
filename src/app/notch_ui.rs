@@ -352,31 +352,30 @@ impl Cikung {
         }
     }
 
-    /// Nusa-style page indicator centred on the panel's bottom edge: a pill for the
-    /// current page, dots for the rest.
+    /// Nusa-style page indicator centred on the panel's bottom edge. The current page's pill
+    /// glides between the dots, each dot widening as it arrives; the mouse wheel over the
+    /// strip flips pages.
     fn page_indicator(&mut self, ui: &mut egui::Ui, center: Pos2, opacity: f32, interactive: bool) {
         let count = Page::CAROUSEL.len() + 1;
         let spacing = 12.0;
         let left = center.x - spacing * (count as f32 - 1.0) / 2.0;
-        let current = self.carousel_index();
+        let glide = if self.prefs.reduced_motion { 0.0 } else { 0.32 };
+        let pill = self
+            .carousel_index()
+            .map(|index| ease_toward(ui.ctx(), ui.id().with("page-pill"), index as f32, glide));
         for index in 0..count {
             let dot = Pos2::new(left + spacing * index as f32, center.y);
             let hit = Rect::from_center_size(dot, Vec2::new(spacing, 14.0));
             let hovered = interactive && ui.rect_contains_pointer(hit);
-            if current == Some(index) {
-                ui.painter().rect_filled(
-                    Rect::from_center_size(dot, Vec2::new(14.0, 5.0)),
-                    3,
-                    ink().gamma_multiply(opacity),
-                );
-            } else {
-                let gray = if hovered { 170 } else { 85 };
-                ui.painter().circle_filled(
-                    dot,
-                    2.5,
-                    Color32::from_gray(gray).gamma_multiply(opacity),
-                );
-            }
+            // 1 under the pill, 0 a dot or more away, smoothstepped.
+            let near = pill.map_or(0.0, |p| (1.0 - (index as f32 - p).abs()).clamp(0.0, 1.0));
+            let near = near * near * (3.0 - 2.0 * near);
+            let dim = Color32::from_gray(if hovered { 170 } else { 85 });
+            ui.painter().rect_filled(
+                Rect::from_center_size(dot, Vec2::new(5.0 + 9.0 * near, 5.0)),
+                2.5,
+                dim.lerp_to_gamma(ink(), near).gamma_multiply(opacity),
+            );
             if !interactive {
                 continue;
             }
@@ -387,6 +386,22 @@ impl Cikung {
                 .clicked()
             {
                 self.show_carousel(index);
+            }
+        }
+        let strip = Rect::from_center_size(center, Vec2::new(spacing * count as f32 + 16.0, 22.0));
+        if interactive && ui.rect_contains_pointer(strip) {
+            // Wheel down or swipe left: next page. One notch (40 pt) is one page.
+            let delta = ui.input(|i| i.raw_scroll_delta);
+            let id = ui.id().with("page-wheel");
+            let total = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0) - delta.x - delta.y;
+            let step = if total.abs() >= 30.0 {
+                total.signum() as isize
+            } else {
+                0
+            };
+            ui.data_mut(|d| d.insert_temp(id, if step == 0 { total } else { 0.0 }));
+            if step != 0 {
+                self.step_page(step);
             }
         }
     }
@@ -500,6 +515,26 @@ impl Cikung {
             });
         }
     }
+}
+
+/// Eases out (cubic) over `seconds` from the value shown when `target` last changed.
+fn ease_toward(ctx: &egui::Context, id: egui::Id, target: f32, seconds: f64) -> f32 {
+    let now = ctx.input(|i| i.time);
+    let (from, to, started) =
+        ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(id, || (target, target, now)));
+    let t = if seconds > 0.0 {
+        ((now - started) / seconds).clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    };
+    let shown = from + (to - from) * (1.0 - (1.0 - t).powi(3));
+    if to != target {
+        ctx.data_mut(|d| d.insert_temp(id, (shown, target, now)));
+    }
+    if to != target || t < 1.0 {
+        ctx.request_repaint();
+    }
+    shown
 }
 
 /// Nusa-style volume HUD beside the cat: a speaker, a bar easing to the new level, and the
