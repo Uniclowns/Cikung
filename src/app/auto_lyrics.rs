@@ -3,6 +3,8 @@ use super::*;
 pub(super) struct AutomaticLyrics {
     changed_at: Instant,
     pub attempted: bool,
+    /// The one automatic second try for this track has been used.
+    retried: bool,
     pub automatic_request: Option<u64>,
     pub error: Option<String>,
     cache: VecDeque<(String, Result<Lyrics, String>)>,
@@ -12,6 +14,7 @@ impl Default for AutomaticLyrics {
         Self {
             changed_at: Instant::now(),
             attempted: false,
+            retried: false,
             automatic_request: None,
             error: None,
             cache: VecDeque::new(),
@@ -22,8 +25,22 @@ impl AutomaticLyrics {
     pub fn track_changed(&mut self, now: Instant) {
         self.changed_at = now;
         self.attempted = false;
+        self.retried = false;
         self.automatic_request = None;
         self.error = None;
+    }
+    /// A player often sends a new title before its duration, and LRCLIB matches on duration,
+    /// so the first lookup for a new song can miss. Try once more about four seconds later.
+    pub fn retry_later(&mut self, now: Instant) -> bool {
+        if self.retried {
+            return false;
+        }
+        self.retried = true;
+        self.attempted = false;
+        self.error = None;
+        // The lookup waits a second after `changed_at`.
+        self.changed_at = now + Duration::from_secs(3);
+        true
     }
     pub fn remember(&mut self, identity: String, result: Result<Lyrics, String>) {
         self.cache.retain(|(key, _)| key != &identity);
@@ -168,6 +185,27 @@ mod tests {
         ));
     }
     #[test]
+    fn a_missed_first_lookup_retries_once_a_few_seconds_later() {
+        let (_, mut app, now) = app();
+        assert!(
+            app.automatic_lyrics_action(now + Duration::from_secs(1))
+                .is_some()
+        );
+        assert!(app.auto_lyrics.retry_later(now + Duration::from_secs(2)));
+        assert!(
+            app.automatic_lyrics_action(now + Duration::from_secs(5))
+                .is_none()
+        );
+        assert!(matches!(
+            app.automatic_lyrics_action(now + Duration::from_secs(6)),
+            Some(Action::Fetch(_))
+        ));
+        assert!(!app.auto_lyrics.retry_later(now + Duration::from_secs(7)));
+        // A new song gets its own second try.
+        app.auto_lyrics.track_changed(now + Duration::from_secs(8));
+        assert!(app.auto_lyrics.retry_later(now + Duration::from_secs(9)));
+    }
+    #[test]
     fn disabled_paused_incomplete_imported_and_preview_media_do_not_fetch() {
         let (_, mut app, now) = app();
         let ready = now + Duration::from_secs(2);
@@ -222,6 +260,21 @@ mod tests {
         let id = app.request(Pending::Lyrics {
             generation: app.lyrics_generation,
             identity,
+        });
+        app.active_lyrics = Some(id);
+        app.auto_lyrics.automatic_request = Some(id);
+        app.lyrics_busy = true;
+        app.cloud.inject_event(CloudEvent::Lyrics {
+            request_id: id,
+            result: Err("No match".into()),
+        });
+        app.tick(&ctx);
+        // The first miss tries once more, quietly; the second one says so.
+        assert!(app.auto_lyrics.error.is_none());
+        assert!(!app.auto_lyrics.attempted);
+        let id = app.request(Pending::Lyrics {
+            generation: app.lyrics_generation,
+            identity: app.lyrics_identity.clone(),
         });
         app.active_lyrics = Some(id);
         app.auto_lyrics.automatic_request = Some(id);

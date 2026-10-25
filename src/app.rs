@@ -1298,11 +1298,17 @@ impl Cikung {
                     }
                     let automatic = self.auto_lyrics.automatic_request.take() == Some(request_id);
                     let result = result.and_then(|text| Lyrics::parse(&text));
-                    self.auto_lyrics.remember(identity.clone(), result.clone());
-                    if let Err(error) = self.apply_lyrics_result(identity, result)
-                        && !automatic
-                    {
-                        self.toast("Lyrics", error);
+                    // A miss is not kept: it was often only the player's stale duration.
+                    if result.is_ok() {
+                        self.auto_lyrics.remember(identity.clone(), result.clone());
+                    }
+                    if let Err(error) = self.apply_lyrics_result(identity, result) {
+                        if !automatic {
+                            self.toast("Lyrics", error);
+                        } else if self.auto_lyrics.retry_later(Instant::now()) {
+                            // "Getting your lyrics ready…" until the second try answers.
+                            self.auto_lyrics.error = None;
+                        }
                     }
                 }
                 CloudEvent::Transcription { request_id, result } => {
