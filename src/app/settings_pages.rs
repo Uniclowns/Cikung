@@ -216,16 +216,16 @@ impl Cikung {
         card(ui, |ui| {
             heading(
                 ui,
-                "Battery, internet and Caps Lock",
-                "A heads-up in the notch when your charger, battery, connection or Caps Lock changes.",
+                "Battery, internet, Caps Lock and volume",
+                "A heads-up in the notch when your charger, battery, connection, Caps Lock or volume changes.",
             );
             ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
                 ui.checkbox(
                     &mut self.prefs.system_notices,
-                    "Show battery, internet and Caps Lock notices",
+                    "Show battery, internet, Caps Lock and volume notices",
                 );
             });
-            ui.label(RichText::new("Charger connected or unplugged, low battery at 20 %, critical at 10 %, fully charged; internet connected, no internet or disconnected; Caps Lock on or off. Windows only. The state at startup is quiet.").size(11.0).color(muted()));
+            ui.label(RichText::new("Charger connected or unplugged, low battery at 20 %, critical at 10 %, fully charged; internet connected, no internet or disconnected; Caps Lock on or off; the volume level with an animated bar when it changes. Windows only. The state at startup is quiet.").size(11.0).color(muted()));
         });
         card(ui, |ui| {
             heading(

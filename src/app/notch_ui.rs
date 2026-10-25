@@ -38,6 +38,21 @@ impl Cikung {
             }
             self.draw_cat(ui, 31.0);
             let notice = self.header_notice();
+            // Volume HUD: the bar eases from the last shown level to the new one.
+            let hud = (!show_actions).then(|| self.volume_hud_level()).flatten();
+            let hud_fill = hud.map(|(level, _)| {
+                ui.ctx()
+                    .animate_value_with_time(egui::Id::new("volume-hud-fill"), level, 0.18)
+            });
+            let hud_alpha = ui.ctx().animate_bool_with_time(
+                egui::Id::new("volume-hud-on"),
+                hud.is_some(),
+                0.15,
+            );
+            if hud.is_some() {
+                // Wake again in time to hand the slot back to the title.
+                ui.ctx().request_repaint_after(Duration::from_millis(100));
+            }
             let tooltip = notice
                 .map(|n| n.text.clone())
                 .unwrap_or_else(|| "Click to open or close · Escape to close".into());
@@ -90,7 +105,9 @@ impl Cikung {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.set_min_size(Vec2::new(title_width, 32.0));
-                        if let Some(line) = &lyric {
+                        if let (Some((level, muted)), Some(fill)) = (hud, hud_fill) {
+                            volume_hud(ui, fill, level, muted, hud_alpha)
+                        } else if let Some(line) = &lyric {
                             lyric_ticker(ui, line, reduced, lyric_cut)
                         } else if let Some(heading) = heading {
                             ui.add(
@@ -184,11 +201,19 @@ impl Cikung {
         })
     }
 
+    /// The volume HUD's level and mute while it is due in the collapsed notch.
+    pub(super) fn volume_hud_level(&self) -> Option<(f32, bool)> {
+        self.volume_hud
+            .filter(|(_, _, until)| *until > Instant::now())
+            .map(|(level, muted, _)| (level, muted))
+    }
+
     /// Nusa's minimal notch: just the cat and the time while nothing plays or needs saying.
     pub(super) fn minimal_idle(&self) -> bool {
         self.prefs.minimal_notch
             && !self.demo
             && self.header_notice().is_none()
+            && self.volume_hud_level().is_none()
             && self.file_hover.is_none()
             && !self.recorder.is_recording()
             && !self.tools.focus.running
@@ -456,6 +481,64 @@ impl Cikung {
 }
 
 /// Collapsed-notch lyric line: the old line lifts away as the new one rises in.
+/// Nusa-style volume HUD in the title slot: a speaker, a bar easing to the new level, and
+/// the percentage (or "Muted").
+fn volume_hud(
+    ui: &mut egui::Ui,
+    fill: f32,
+    level: f32,
+    is_muted: bool,
+    alpha: f32,
+) -> egui::Response {
+    let rect = ui.max_rect();
+    let response = ui.allocate_rect(rect, Sense::click());
+    let painter = ui.painter_at(rect);
+    let color = ink().gamma_multiply(alpha);
+    let waves = if is_muted || level <= 0.0 {
+        0
+    } else if level > 0.5 {
+        2
+    } else {
+        1
+    };
+    super::music::paint_speaker(
+        &painter,
+        Pos2::new(rect.left() + 8.0, rect.center().y),
+        waves,
+        is_muted,
+        color,
+    );
+    let bar = Rect::from_min_max(
+        Pos2::new(rect.left() + 26.0, rect.center().y - 2.0),
+        Pos2::new(
+            (rect.right() - 44.0).max(rect.left() + 40.0),
+            rect.center().y + 2.0,
+        ),
+    );
+    painter.rect_filled(bar, 2, veil(40).gamma_multiply(alpha));
+    painter.rect_filled(
+        bar.with_max_x(bar.left() + bar.width() * fill.clamp(0.0, 1.0)),
+        2,
+        if is_muted {
+            muted().gamma_multiply(alpha)
+        } else {
+            color
+        },
+    );
+    painter.text(
+        Pos2::new(rect.right(), rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        if is_muted {
+            "Muted".to_owned()
+        } else {
+            format!("{:.0}%", level * 100.0)
+        },
+        egui::FontId::proportional(12.0),
+        color,
+    );
+    response
+}
+
 /// `width` is where a line is cut; the visible rect clips anything past it.
 pub(super) fn lyric_ticker(
     ui: &mut egui::Ui,

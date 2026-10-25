@@ -387,6 +387,8 @@ pub struct Cikung {
     click_through: bool,
     /// System output level and mute for the Music page's slider, and when they were read.
     volume: Option<(f32, bool)>,
+    /// The volume HUD's level, mute and when it leaves the collapsed notch.
+    volume_hud: Option<(f32, bool, Instant)>,
     volume_checked: Option<Instant>,
     whatsapp: Option<crate::whatsapp::Monitor>,
     notification_access: Option<std::sync::mpsc::Receiver<Result<crate::whatsapp::Access, String>>>,
@@ -631,6 +633,7 @@ impl Cikung {
             camera_notch: native::camera_notch(),
             click_through: false,
             volume: None,
+            volume_hud: None,
             volume_checked: None,
             whatsapp: None,
             notification_access: None,
@@ -1063,11 +1066,20 @@ impl Cikung {
         } else if !system_enabled {
             self.system = None;
         }
-        let notices = self.system.as_ref().map(|m| m.poll()).unwrap_or_default();
-        for notice in notices {
-            // Caps Lock answers a key press; battery and internet changes stay a little longer.
-            let seconds = if notice.title == "Caps Lock" { 2 } else { 6 };
-            self.toast_for(notice.title, notice.text, Duration::from_secs(seconds));
+        let events = self.system.as_ref().map(|m| m.poll()).unwrap_or_default();
+        for event in events {
+            match event {
+                crate::system_notices::Event::Notice(notice) => {
+                    // Caps Lock answers a key press; battery and internet changes stay longer.
+                    let seconds = if notice.title == "Caps Lock" { 2 } else { 6 };
+                    self.toast_for(notice.title, notice.text, Duration::from_secs(seconds));
+                }
+                // The collapsed notch shows the new level for a moment, like Nusa's HUD.
+                crate::system_notices::Event::Volume { level, muted } => {
+                    self.volume_hud =
+                        Some((level, muted, Instant::now() + Duration::from_millis(1600)));
+                }
+            }
         }
         self.agent_manager.poll();
         self.desktop_manager

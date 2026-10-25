@@ -584,7 +584,13 @@ pub(crate) fn album_tint(image: &image::RgbaImage) -> Color32 {
 const VOLUME_WIDTH: f32 = 66.0;
 
 /// A speaker with 0–2 sound waves, or a cross when muted.
-fn paint_speaker(painter: &egui::Painter, c: Pos2, waves: u8, muted: bool, color: Color32) {
+pub(super) fn paint_speaker(
+    painter: &egui::Painter,
+    c: Pos2,
+    waves: u8,
+    muted: bool,
+    color: Color32,
+) {
     painter.rect_filled(
         Rect::from_center_size(c + Vec2::new(-5.0, 0.0), Vec2::new(4.0, 6.0)),
         1,

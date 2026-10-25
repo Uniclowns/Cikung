@@ -1,11 +1,20 @@
-//! Battery, internet and Caps Lock heads-ups in the notch, as Nusa 1.0 shows them. Only
-//! changes are announced, never the state Cikung starts in. Windows only for now; other
-//! platforms read nothing.
+//! Battery, internet, Caps Lock and volume heads-ups in the notch, as Nusa 1.0 shows them.
+//! Only changes are announced, never the state Cikung starts in. Windows only for now;
+//! other platforms read nothing.
 use std::{sync::mpsc, time::Duration};
 
 pub struct Notice {
     pub title: &'static str,
     pub text: String,
+}
+
+pub enum Event {
+    Notice(Notice),
+    /// The system output level (0–1) or mute changed, from any app or the volume keys.
+    Volume {
+        level: f32,
+        muted: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,9 +39,17 @@ struct State {
     network: Option<Network>,
     network_candidate: Option<Network>,
     caps_lock: Option<bool>,
+    volume: Option<(f32, bool)>,
 }
 
 impl State {
+    /// A level change of more than half a percent, or mute, shows the volume HUD.
+    fn volume(&mut self, level: f32, muted: bool) -> Option<Event> {
+        let (previous, was_muted) = self.volume.replace((level, muted))?;
+        ((previous - level).abs() > 0.005 || was_muted != muted)
+            .then_some(Event::Volume { level, muted })
+    }
+
     /// Charger changes, "fully charged", and the 20 % and 10 % warnings while on battery.
     fn power(&mut self, next: Power) -> Option<Notice> {
         let previous = self.power.replace(next)?;
@@ -97,7 +114,7 @@ impl State {
 
 pub struct Monitor {
     _stop: mpsc::Sender<()>,
-    rx: mpsc::Receiver<Notice>,
+    rx: mpsc::Receiver<Event>,
 }
 
 impl Monitor {
@@ -110,15 +127,23 @@ impl Monitor {
                 probe::init();
                 let mut state = State::default();
                 for tick in 0u32.. {
-                    // Caps Lock every 150 ms so it answers the key; battery and network every 3 s.
-                    let mut notices: Vec<Notice> =
-                        state.caps_lock(probe::caps_lock()).into_iter().collect();
+                    // Caps Lock and volume every 150 ms so they answer the keys; battery and
+                    // network every 3 s.
+                    let mut events: Vec<Event> = state
+                        .caps_lock(probe::caps_lock())
+                        .map(Event::Notice)
+                        .into_iter()
+                        .chain(
+                            probe::volume().and_then(|(level, muted)| state.volume(level, muted)),
+                        )
+                        .collect();
                     if tick % 20 == 0 {
-                        notices.extend(probe::power().and_then(|p| state.power(p)));
-                        notices.extend(probe::network().and_then(|n| state.network(n)));
+                        let power = probe::power().and_then(|p| state.power(p));
+                        let network = probe::network().and_then(|n| state.network(n));
+                        events.extend(power.into_iter().chain(network).map(Event::Notice));
                     }
-                    for notice in notices {
-                        if tx.send(notice).is_err() {
+                    for event in events {
+                        if tx.send(event).is_err() {
                             return;
                         }
                         ctx.request_repaint();
@@ -133,7 +158,7 @@ impl Monitor {
         Self { _stop: stop, rx }
     }
 
-    pub fn poll(&self) -> Vec<Notice> {
+    pub fn poll(&self) -> Vec<Event> {
         self.rx.try_iter().collect()
     }
 }
@@ -146,6 +171,10 @@ mod probe {
         use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
         // The connection profile is a WinRT call; this thread lives as long as the monitor.
         let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+    }
+
+    pub fn volume() -> Option<(f32, bool)> {
+        crate::native::system_volume()
     }
 
     pub fn caps_lock() -> bool {
@@ -194,6 +223,9 @@ mod probe {
     use super::{Network, Power};
 
     pub fn init() {}
+    pub fn volume() -> Option<(f32, bool)> {
+        None
+    }
     pub fn caps_lock() -> bool {
         false
     }
@@ -255,6 +287,15 @@ mod tests {
             state.network(Network::Offline).map(|n| n.text).as_deref(),
             Some("Disconnected")
         );
+
+        // Volume: quiet first reading and jitter, then a step or mute.
+        assert!(state.volume(0.4, false).is_none());
+        assert!(state.volume(0.402, false).is_none());
+        assert!(matches!(
+            state.volume(0.5, false),
+            Some(Event::Volume { level, muted: false }) if level == 0.5
+        ));
+        assert!(state.volume(0.5, true).is_some());
 
         // Caps Lock: quiet first reading, then every toggle.
         assert!(state.caps_lock(false).is_none());
