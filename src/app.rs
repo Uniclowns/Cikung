@@ -1632,7 +1632,8 @@ impl eframe::App for Cikung {
             } else if self.minimal_idle() {
                 // Same order as `header`: paused music shows the minimal pill, not the lyric.
                 notch::COLLAPSED_MINIMAL
-            } else if let Some(width) = lyric_width {
+            } else if let Some(width) = lyric_width.filter(|_| self.volume_hud_level().is_none()) {
+                // The volume HUD keeps the standard pill so its bar stays a sensible length.
                 Vec2::new(width, notch::COLLAPSED_LYRIC.y)
             } else {
                 notch::COLLAPSED

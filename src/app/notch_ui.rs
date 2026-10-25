@@ -37,7 +37,6 @@ impl Cikung {
                 return;
             }
             self.draw_cat(ui, 31.0);
-            let notice = self.header_notice();
             // Volume HUD: the bar eases from the last shown level to the new one.
             let hud = (!show_actions).then(|| self.volume_hud_level()).flatten();
             let hud_fill = hud.map(|(level, _)| {
@@ -53,6 +52,25 @@ impl Cikung {
                 // Wake again in time to hand the slot back to the title.
                 ui.ctx().request_repaint_after(Duration::from_millis(100));
             }
+            // The HUD takes the whole row beside the cat; the title, clock and date step aside.
+            if let (Some((level, muted)), Some(fill)) = (hud, hud_fill) {
+                let size = Vec2::new(ui.available_width(), 32.0);
+                let response = ui
+                    .allocate_ui_with_layout(
+                        size,
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_min_size(size);
+                            volume_hud(ui, fill, level, muted, hud_alpha)
+                        },
+                    )
+                    .inner;
+                if response.clicked() {
+                    self.expanded = !self.expanded;
+                }
+                return;
+            }
+            let notice = self.header_notice();
             let tooltip = notice
                 .map(|n| n.text.clone())
                 .unwrap_or_else(|| "Click to open or close · Escape to close".into());
@@ -105,9 +123,7 @@ impl Cikung {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.set_min_size(Vec2::new(title_width, 32.0));
-                        if let (Some((level, muted)), Some(fill)) = (hud, hud_fill) {
-                            volume_hud(ui, fill, level, muted, hud_alpha)
-                        } else if let Some(line) = &lyric {
+                        if let Some(line) = &lyric {
                             lyric_ticker(ui, line, reduced, lyric_cut)
                         } else if let Some(heading) = heading {
                             ui.add(
@@ -480,9 +496,8 @@ impl Cikung {
     }
 }
 
-/// Collapsed-notch lyric line: the old line lifts away as the new one rises in.
-/// Nusa-style volume HUD in the title slot: a speaker, a bar easing to the new level, and
-/// the percentage (or "Muted").
+/// Nusa-style volume HUD beside the cat: a speaker, a bar easing to the new level, and the
+/// percentage (or "Muted").
 fn volume_hud(
     ui: &mut egui::Ui,
     fill: f32,
@@ -539,6 +554,7 @@ fn volume_hud(
     response
 }
 
+/// Collapsed-notch lyric line: the old line lifts away as the new one rises in.
 /// `width` is where a line is cut; the visible rect clips anything past it.
 pub(super) fn lyric_ticker(
     ui: &mut egui::Ui,
