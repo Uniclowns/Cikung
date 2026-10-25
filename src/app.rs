@@ -43,21 +43,36 @@ pub(crate) enum Theme {
     Black,
     White,
     Orange,
+    /// See-through smoked glass with a sheen and a light rim.
+    Glass,
 }
 impl Theme {
-    pub const ALL: [Self; 4] = [Self::Album, Self::Black, Self::White, Self::Orange];
+    pub const ALL: [Self; 5] = [
+        Self::Album,
+        Self::Black,
+        Self::White,
+        Self::Orange,
+        Self::Glass,
+    ];
     pub fn label(self) -> &'static str {
         match self {
             Self::Album => "Album colour",
             Self::Black => "Pure black",
             Self::White => "White",
             Self::Orange => "Orange",
+            Self::Glass => "Glass",
         }
     }
     /// Surface, main text, secondary text and accent.
     fn colors(self) -> [Color32; 4] {
         match self {
             Self::Album | Self::Black => [Color32::BLACK, WHITE, GRAY, ORANGE],
+            Self::Glass => [
+                Color32::from_rgba_unmultiplied(18, 18, 26, 150),
+                WHITE,
+                Color32::from_rgb(200, 200, 210),
+                ORANGE,
+            ],
             Self::White => [
                 Color32::from_rgb(246, 246, 248),
                 Color32::from_rgb(22, 22, 26),
@@ -101,7 +116,7 @@ pub(crate) fn veil(alpha: u8) -> Color32 {
 }
 /// Light themes swap the dark widget fills for washes of their text colour.
 fn theme_visuals(ui: &mut egui::Ui, theme: Theme) {
-    if matches!(theme, Theme::Album | Theme::Black) {
+    if matches!(theme, Theme::Album | Theme::Black | Theme::Glass) {
         return;
     }
     let [paper, ink, _, _] = theme.colors();
@@ -1828,6 +1843,9 @@ impl eframe::App for Cikung {
                     paint_neck(ui.painter(), neck, pill, base);
                 }
                 notch::paint_surface(ui.painter(), pill, radius, base, Color32::from_rgb(r, g, b));
+                if self.prefs.theme == Theme::Glass {
+                    notch::paint_glass(ui.painter(), pill, radius);
+                }
                 // Never taller than the pill, so the minimal notch's row stays centred.
                 let header_rect = Rect::from_min_size(
                     pill.min + Vec2::new(14.0, 2.0),

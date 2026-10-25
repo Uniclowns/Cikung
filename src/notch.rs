@@ -107,6 +107,36 @@ impl Motion {
 }
 
 /// `base` surface that warms into `tint` toward its bottom edge, like Nusa's cover-tinted notch.
+/// The glass theme over its smoked surface: a sheen fading down from the top edge, and a
+/// faint light rim around the rounded bottom.
+pub fn paint_glass(painter: &Painter, rect: Rect, radius: f32) {
+    if rect.height() < 4.0 {
+        return;
+    }
+    let band = (rect.height() * 0.45).min(rect.height() - radius).max(0.0);
+    let mut sheen = Mesh::default();
+    let top = Color32::from_white_alpha(30);
+    sheen.colored_vertex(rect.left_top(), top);
+    sheen.colored_vertex(rect.right_top(), top);
+    sheen.colored_vertex(pos2(rect.left(), rect.top() + band), Color32::TRANSPARENT);
+    sheen.colored_vertex(pos2(rect.right(), rect.top() + band), Color32::TRANSPARENT);
+    sheen.add_triangle(0, 1, 2);
+    sheen.add_triangle(1, 3, 2);
+    painter.add(sheen);
+    let corner = radius.round() as u8;
+    painter.rect_stroke(
+        rect,
+        CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: corner,
+            se: corner,
+        },
+        eframe::egui::Stroke::new(1.0_f32, Color32::from_white_alpha(42)),
+        eframe::egui::StrokeKind::Inside,
+    );
+}
+
 pub fn paint_surface(painter: &Painter, rect: Rect, radius: f32, base: Color32, tint: Color32) {
     let corner = radius.round() as u8;
     painter.rect_filled(
