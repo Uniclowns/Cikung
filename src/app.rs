@@ -301,6 +301,8 @@ pub(crate) struct Preferences {
     pub tuck_in_fullscreen: bool,
     pub display: String,
     pub shortcut: String,
+    /// Ctrl + Alt + this letter tucks the whole notch away, for games and full-screen work.
+    pub hide_shortcut: String,
     pub companion_shortcut_initialized: bool,
     /// Sign-in startup has been turned on once; switching it off afterwards is kept.
     pub startup_initialized: bool,
@@ -343,6 +345,7 @@ impl Default for Preferences {
             tuck_in_fullscreen: false,
             display: String::new(),
             shortcut: "C".into(),
+            hide_shortcut: "H".into(),
             companion_shortcut_initialized: false,
             startup_initialized: false,
             outfit: Outfit::Auto,
@@ -435,6 +438,9 @@ pub struct Cikung {
     fullscreen: bool,
     pub(crate) handle: Option<usize>,
     pub(crate) shortcut: Option<native::GlobalShortcut>,
+    pub(crate) hide_shortcut: Option<native::GlobalShortcut>,
+    /// Tucked away with the hide shortcut until it is pressed again.
+    hidden: bool,
     pub(crate) notices: VecDeque<Notice>,
     pub(crate) chat: Vec<ChatMessage>,
     pub(crate) schedule: schedule::Schedule,
@@ -585,19 +591,17 @@ impl Cikung {
                 }
             }
         };
-        let shortcut = if launch.demo || launch.capture.is_some() {
-            None
+        let (shortcut, hide_shortcut) = if launch.demo || launch.capture.is_some() {
+            (None, None)
         } else {
-            native::GlobalShortcut::new(
-                cc.egui_ctx.clone(),
-                prefs
-                    .shortcut
-                    .bytes()
-                    .next()
-                    .unwrap_or(b'C')
-                    .to_ascii_uppercase(),
+            let register = |text: &str, fallback| {
+                native::GlobalShortcut::new(cc.egui_ctx.clone(), shortcut_letter(text, fallback))
+                    .ok()
+            };
+            (
+                register(&prefs.shortcut, b'C'),
+                register(&prefs.hide_shortcut, b'H'),
             )
-            .ok()
         };
         let requested = launch.page.as_deref().map(Page::parse).unwrap_or_default();
         let hub_page = launch
@@ -694,6 +698,8 @@ impl Cikung {
             fullscreen: false,
             handle: native::window_handle(cc),
             shortcut,
+            hide_shortcut,
+            hidden: false,
             notices,
             chat: vec![],
             draft: String::new(),
@@ -1169,7 +1175,7 @@ impl Cikung {
                 shell.notify(&notice.title, &notice.message);
             }
             self.toast(notice.title, notice.message);
-            if !self.fullscreen {
+            if !self.fullscreen && !self.hidden {
                 self.expanded = true;
             }
         }
@@ -1439,6 +1445,17 @@ impl Cikung {
         {
             self.expanded = !self.expanded;
         }
+        // The open shortcut above still shows the panel while hidden.
+        if self
+            .hide_shortcut
+            .as_ref()
+            .is_some_and(|shortcut| shortcut.pressed())
+        {
+            self.hidden = !self.hidden;
+            if self.hidden {
+                self.expanded = false;
+            }
+        }
 
         if self.prefs.days.len() > 90
             && let Some(day) = self.prefs.days.keys().next().cloned()
@@ -1542,6 +1559,26 @@ impl Cikung {
             }
         });
     }
+}
+
+/// The letter for Ctrl + Alt + letter: the first one typed, upper-cased.
+pub(crate) fn shortcut_letter(text: &str, fallback: u8) -> u8 {
+    text.bytes().next().unwrap_or(fallback).to_ascii_uppercase()
+}
+
+/// Registers Ctrl + Alt + `text`'s letter and writes back the letter used.
+pub(crate) fn register_shortcut(
+    ctx: &egui::Context,
+    text: &mut String,
+    fallback: u8,
+) -> Result<native::GlobalShortcut, String> {
+    let letter = shortcut_letter(text, fallback);
+    if !letter.is_ascii_alphabetic() {
+        return Err("Use a letter from A to Z.".into());
+    }
+    let shortcut = native::GlobalShortcut::new(ctx.clone(), letter)?;
+    *text = (letter as char).to_string();
+    Ok(shortcut)
 }
 
 /// Mac camera notch: the pill sits below the camera (`height`) and a neck the camera's
@@ -1660,7 +1697,10 @@ impl eframe::App for Cikung {
             inside,
             self.expanded,
             HoverPolicy {
-                enabled: self.prefs.hover_open && self.capture.is_none() && !self.fullscreen,
+                enabled: self.prefs.hover_open
+                    && self.capture.is_none()
+                    && !self.fullscreen
+                    && !self.hidden,
                 auto_close: self.prefs.auto_collapse,
                 pinned: false,
                 held,
@@ -1846,7 +1886,7 @@ impl eframe::App for Cikung {
         if inside && ctx.input(|i| i.pointer.any_click()) {
             self.hover.interact();
         }
-        let tucked = self.fullscreen && !self.expanded;
+        let tucked = (self.fullscreen || self.hidden) && !self.expanded;
         let shape = if tucked {
             Rect::ZERO
         } else if egui::Popup::is_any_open(ctx) {

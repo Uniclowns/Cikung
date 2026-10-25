@@ -494,26 +494,36 @@ impl Cikung {
                     .desired_width(25.0),
             );
             if ui.button("Apply").clicked() {
-                let letter = self
-                    .prefs
-                    .shortcut
-                    .bytes()
-                    .next()
-                    .unwrap_or(b'C')
-                    .to_ascii_uppercase();
-                if letter.is_ascii_alphabetic() {
-                    self.shortcut = None;
-                    match native::GlobalShortcut::new(ui.ctx().clone(), letter) {
-                        Ok(shortcut) => {
-                            self.shortcut = Some(shortcut);
-                            self.prefs.shortcut = (letter as char).to_string();
-                            self.toast("Shortcut", "Global shortcut updated.");
-                        }
-                        Err(e) => self.toast("Shortcut", e),
+                // Unregister the old letter first so the same one can be applied again.
+                self.shortcut = None;
+                match register_shortcut(ui.ctx(), &mut self.prefs.shortcut, b'C') {
+                    Ok(shortcut) => {
+                        self.shortcut = Some(shortcut);
+                        self.toast("Shortcut", "Global shortcut updated.");
                     }
+                    Err(e) => self.toast("Shortcut", e),
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Hide or show Cikung: Ctrl + Alt +");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.prefs.hide_shortcut)
+                    .char_limit(1)
+                    .desired_width(25.0),
+            );
+            if ui.button("Apply").clicked() {
+                self.hide_shortcut = None;
+                match register_shortcut(ui.ctx(), &mut self.prefs.hide_shortcut, b'H') {
+                    Ok(shortcut) => {
+                        self.hide_shortcut = Some(shortcut);
+                        self.toast("Shortcut", "Hide shortcut updated.");
+                    }
+                    Err(e) => self.toast("Shortcut", e),
+                }
+            }
+        });
+        ui.label(RichText::new("For games and full-screen work: the notch tucks away completely until you press it again. The global shortcut above still opens the panel while it is hidden.").size(11.0).color(muted()));
 
         ui.add_space(18.0);
         ui.label("Escape · close the current panel");

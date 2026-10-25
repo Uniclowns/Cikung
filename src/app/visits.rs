@@ -55,6 +55,7 @@ impl Cikung {
         // Not over the open panel, another message, a recording, a focus session or a
         // fullscreen app: try again in a minute.
         if self.expanded
+            || self.hidden
             || self.header_notice().is_some()
             || self.volume_hud_level().is_some()
             || self.recorder.is_recording()
