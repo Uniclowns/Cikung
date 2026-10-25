@@ -42,7 +42,7 @@ After Setup, open Cikung from the Start menu; the portable `Cikung.exe` runs fro
 | Lyrics | Automatic LRCLIB lookup, imported LRC/plain lyrics and click-to-seek synchronized lines on supported players. |
 | Focus | Focus/break timers, custom duration, pause/resume, session and focused-time counts. |
 | Files | Drop files on the notch, keep local references, open/reveal them, remove one or Clear all. Originals are not moved or deleted. |
-| Tasks | Persistent tasks, completion, editing and optional local due reminders while Cikung runs. |
+| Tasks | Persistent tasks, completion, editing and optional local due reminders while Cikung runs. The chat assistant can propose tasks you confirm, and tasks with a due time sync to Google Calendar after a one-time sign-in with your own OAuth client ([guide](docs/google-calendar.md)). |
 | Water | Opt-in reminders, bottle volume, daily ml goal, active hours, snooze, drink count, an hourly chart of today's drinks (as in Nusa) and recent daily totals. |
 | Notes | Local notes, imports/export, explicit Windows microphone + PC-audio recording, dictation, transcription, AI summaries and marked action-item extraction. |
 | Agents | Claude App and Codex / ChatGPT App desktop status, visible conversation and explicit Send to active chat on Windows; a reply that finishes while the app is in the background is announced from the app's own Windows notification. Oh My Pi retains its connected terminal integration. |

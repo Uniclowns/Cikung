@@ -378,7 +378,10 @@ impl Cikung {
             Phone => card(ui, |ui| self.phone(ui)),
             Notes => card(ui, |ui| self.notes(ui)),
             Focus => card(ui, |ui| self.focus(ui)),
-            Tasks => card(ui, |ui| self.tasks(ui)),
+            Tasks => {
+                card(ui, |ui| self.tasks(ui));
+                card(ui, |ui| self.google_calendar_settings(ui));
+            }
             Water => card(ui, |ui| self.water(ui)),
             Game => card(ui, |ui| self.game_panel(ui)),
             Shortcuts => card(ui, |ui| self.shortcut_settings(ui)),

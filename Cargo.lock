@@ -567,6 +567,7 @@ checksum = "6e4de3bc4ea267985becf712dc6d9eed8b04c953b3fcfb339ebc87acd9804901"
 name = "cikung"
 version = "0.14.5"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "eframe",
  "getrandom 0.3.4",
@@ -584,6 +585,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "sha2",
  "tiny_http",
  "wasapi",
  "windows",

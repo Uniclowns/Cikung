@@ -25,6 +25,7 @@ mod cat_gallery;
 mod game;
 mod music;
 mod notch_ui;
+mod schedule;
 mod settings_pages;
 mod settings_window;
 
@@ -283,6 +284,8 @@ pub(crate) struct Preferences {
     pub system_notices: bool,
     /// Nusa's minimal notch: only the cat and the time while nothing plays.
     pub minimal_notch: bool,
+    /// Tasks with a due time go to Google Calendar once Google is connected.
+    pub calendar_sync: bool,
     pub whatsapp_notifications: bool,
     pub whatsapp_preview: bool,
     /// Widest a WhatsApp message widens the collapsed pill (see `notch::MESSAGE_WIDTHS`).
@@ -326,6 +329,7 @@ impl Default for Preferences {
             bluetooth_notifications: true,
             system_notices: true,
             minimal_notch: true,
+            calendar_sync: true,
             whatsapp_notifications: true,
             whatsapp_preview: false,
             whatsapp_width: 520.0,
@@ -429,6 +433,7 @@ pub struct Cikung {
     pub(crate) shortcut: Option<native::GlobalShortcut>,
     pub(crate) notices: VecDeque<Notice>,
     pub(crate) chat: Vec<ChatMessage>,
+    pub(crate) schedule: schedule::Schedule,
     pub(crate) draft: String,
     pub(crate) chat_busy: bool,
     pub(crate) pending: HashMap<u64, Pending>,
@@ -686,6 +691,7 @@ impl Cikung {
             chat: vec![],
             draft: String::new(),
             chat_busy: false,
+            schedule: Default::default(),
             pending: HashMap::new(),
             next_request: 1,
             chat_generation: 0,
@@ -787,6 +793,7 @@ impl Cikung {
         self.active_chat = None;
         self.chat_busy = false;
         self.chat.clear();
+        self.schedule.proposals.clear();
         self.draft.clear();
         self.pending
             .retain(|_, kind| !matches!(kind, Pending::Chat { .. }));
@@ -971,10 +978,11 @@ impl Cikung {
             generation: self.chat_generation,
             config: serde_json::to_string(&self.prefs.chat).unwrap_or_default(),
         });
-        match self
-            .cloud
-            .send_chat(id, self.prefs.chat.clone(), self.chat.clone())
-        {
+        // The assistant learns the local time and how to propose tasks on every request.
+        let messages = std::iter::once(schedule::assistant_prompt(chrono::Local::now()))
+            .chain(self.chat.iter().cloned())
+            .collect();
+        match self.cloud.send_chat(id, self.prefs.chat.clone(), messages) {
             Ok(()) => {
                 self.chat_busy = true;
                 self.active_chat = Some(id);
@@ -1214,10 +1222,14 @@ impl Cikung {
                                 continue;
                             }
                             match result {
-                                Ok(content) => self.chat.push(ChatMessage {
-                                    role: "assistant".into(),
-                                    content,
-                                }),
+                                Ok(content) => {
+                                    let (content, proposals) = schedule::take_proposals(&content);
+                                    self.schedule.proposals.extend(proposals);
+                                    self.chat.push(ChatMessage {
+                                        role: "assistant".into(),
+                                        content,
+                                    });
+                                }
                                 Err(error) => self.toast("Chat", error),
                             }
                         }
@@ -1307,8 +1319,12 @@ impl Cikung {
                         Err(e) => self.toast("Transcription", e),
                     }
                 }
+                event @ (CloudEvent::GoogleSignIn(_)
+                | CloudEvent::CalendarSaved { .. }
+                | CloudEvent::CalendarDeleted { .. }) => self.calendar_event(event),
             }
         }
+        self.sync_calendar(ctx);
         if let Some(result) = self.dictation.poll() {
             match result {
                 Ok(text) => {

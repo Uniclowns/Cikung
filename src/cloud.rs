@@ -206,6 +206,17 @@ pub enum CloudEvent {
         request_id: u64,
         result: Result<String, String>,
     },
+    GoogleSignIn(Result<(), String>),
+    /// The event ID now holding the task at `signature` (see `tools::calendar_signature`).
+    CalendarSaved {
+        task_id: u64,
+        signature: u64,
+        result: Result<String, String>,
+    },
+    CalendarDeleted {
+        event_id: String,
+        result: Result<(), String>,
+    },
 }
 
 pub struct CloudClient {
@@ -303,6 +314,30 @@ impl CloudClient {
             result: transcribe(&path),
         })
     }
+    /// Holds one request slot while the browser sign-in is open (five minutes at most).
+    pub fn google_sign_in(&self, sign_in: crate::google_calendar::SignIn) -> Result<(), String> {
+        self.launch(move || CloudEvent::GoogleSignIn(sign_in.finish()))
+    }
+    pub fn save_calendar_event(
+        &self,
+        task_id: u64,
+        signature: u64,
+        existing: Option<String>,
+        summary: String,
+        due_unix: u64,
+    ) -> Result<(), String> {
+        self.launch(move || CloudEvent::CalendarSaved {
+            task_id,
+            signature,
+            result: crate::google_calendar::save_event(existing.as_deref(), &summary, due_unix),
+        })
+    }
+    pub fn delete_calendar_event(&self, event_id: String) -> Result<(), String> {
+        self.launch(move || {
+            let result = crate::google_calendar::delete_event(&event_id);
+            CloudEvent::CalendarDeleted { event_id, result }
+        })
+    }
 }
 
 fn credential(name: &str) -> Result<keyring::Entry, String> {
@@ -348,7 +383,7 @@ fn required_secret(name: &str) -> Result<String, String> {
         .ok_or_else(|| "Not connected. Save this provider's API key in Settings first.".into())
 }
 
-fn http() -> Result<Client, String> {
+pub(crate) fn http() -> Result<Client, String> {
     Client::builder()
         .user_agent(concat!("Cikung/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(10))

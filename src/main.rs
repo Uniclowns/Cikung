@@ -12,6 +12,7 @@ mod cloud;
 mod completion_sound;
 mod desktop_apps;
 mod dictation;
+mod google_calendar;
 mod instance;
 mod media;
 mod monitor;

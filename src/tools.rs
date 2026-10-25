@@ -31,6 +31,22 @@ pub struct Task {
     pub due_unix: Option<u64>,
     #[serde(default)]
     pub due_notified: bool,
+    /// The Google Calendar event holding this task, once synced.
+    #[serde(default)]
+    pub google_event: Option<CalendarEvent>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CalendarEvent {
+    pub id: String,
+    /// `calendar_signature` of the text and due time the event was last saved with.
+    pub synced: u64,
+}
+/// Changes when the task's text or due time does, so an edit moves its event.
+pub fn calendar_signature(task: &Task) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    (&task.text, task.due_unix).hash(&mut hash);
+    hash.finish()
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShelfItem {
@@ -55,6 +71,8 @@ pub struct Toolkit {
     pub water: WaterReminder,
     pub notes: Vec<Note>,
     pub lyrics: Lyrics,
+    /// Google Calendar events whose task was deleted or lost its due time.
+    pub calendar_orphans: Vec<String>,
     next_id: u64,
 }
 impl Toolkit {
@@ -89,6 +107,7 @@ impl Toolkit {
             done: false,
             due_unix: None,
             due_notified: false,
+            google_event: None,
         });
         Ok(id)
     }
@@ -114,6 +133,11 @@ impl Toolkit {
             task.due_notified = false;
         }
         task.due_unix = due_unix;
+        if due_unix.is_none()
+            && let Some(event) = task.google_event.take()
+        {
+            self.calendar_orphans.push(event.id);
+        }
         Ok(())
     }
     pub fn task_reminders_at(&mut self, unix: u64) -> Vec<ToolNotice> {
@@ -133,6 +157,12 @@ impl Toolkit {
         notices
     }
     pub fn remove_task(&mut self, id: u64) {
+        let events = self
+            .tasks
+            .iter_mut()
+            .filter(|t| t.id == id)
+            .filter_map(|t| t.google_event.take().map(|e| e.id));
+        self.calendar_orphans.extend(events.collect::<Vec<_>>());
         self.tasks.retain(|t| t.id != id);
     }
     pub fn toggle_task(&mut self, id: u64) {
@@ -848,6 +878,33 @@ mod tests {
         assert_eq!(restored.task_reminders_at(300).len(), 1);
         assert!(restored.edit_task(id + 1, "Missing", None).is_err());
         assert!(restored.add_task(&"a".repeat(2001)).is_err());
+    }
+    #[test]
+    fn calendar_events_follow_edits_and_deletions() {
+        let mut kit = Toolkit::default();
+        let id = kit.add_task("Meeting").unwrap();
+        kit.edit_task(id, "Meeting", Some(1_800_000_000)).unwrap();
+        let saved = calendar_signature(&kit.tasks[0]);
+        kit.tasks[0].google_event = Some(CalendarEvent {
+            id: "e1".into(),
+            synced: saved,
+        });
+        kit.edit_task(id, "Meeting with Ana", Some(1_800_000_000))
+            .unwrap();
+        assert_ne!(calendar_signature(&kit.tasks[0]), saved);
+        // Dropping the due time, then deleting the task, each hand back the event to remove.
+        kit.edit_task(id, "Meeting with Ana", None).unwrap();
+        assert_eq!(kit.calendar_orphans, ["e1"]);
+        assert!(kit.tasks[0].google_event.is_none());
+        kit.tasks[0].google_event = Some(CalendarEvent {
+            id: "e2".into(),
+            synced: 0,
+        });
+        kit.remove_task(id);
+        assert_eq!(kit.calendar_orphans, ["e1", "e2"]);
+        let restored: Toolkit =
+            serde_json::from_str(&serde_json::to_string(&kit).unwrap()).unwrap();
+        assert_eq!(restored.calendar_orphans, ["e1", "e2"]);
     }
     #[test]
     fn overdue_task_batches_are_bounded_without_losing_reminders() {

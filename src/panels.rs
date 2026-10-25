@@ -829,6 +829,7 @@ impl Cikung {
             );
             ui.label(&message.content);
         }
+        self.task_proposals(ui);
         if self.chat_busy {
             ui.spinner();
             ui.label("Thinking…");
@@ -1058,7 +1059,7 @@ impl Cikung {
     }
 }
 
-fn parse_task_due(value: &str) -> Result<Option<u64>, String> {
+pub(crate) fn parse_task_due(value: &str) -> Result<Option<u64>, String> {
     use chrono::TimeZone;
     if value.trim().is_empty() {
         return Ok(None);
@@ -1073,7 +1074,7 @@ fn parse_task_due(value: &str) -> Result<Option<u64>, String> {
         .map(Some)
         .map_err(|_| "Choose a reminder date after 1970.".into())
 }
-fn format_task_due(unix: u64) -> String {
+pub(crate) fn format_task_due(unix: u64) -> String {
     i64::try_from(unix)
         .ok()
         .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
