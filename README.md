@@ -82,7 +82,7 @@ Phone access uses authenticated trusted-LAN HTTP with revocable sessions; do not
 
 ## Platform and scope boundaries
 
-Windows x64 is built and tested. Desktop app conversation links currently use Windows UI Automation; Claude must finish loading/sign-in, and app UI changes can require adapter updates. macOS/Linux desktop app links are not implemented. Linux MPRIS and macOS Spotify/Music/VLC scripting adapters remain in source. Native macOS/Linux validation is pending. macOS browser detection and non-Windows native recording/dictation/tray/global shortcuts are not implemented; Wayland can restrict placement.
+Windows x64 is built and tested. Desktop app conversation links currently use Windows UI Automation; Claude must finish loading/sign-in, and app UI changes can require adapter updates. macOS/Linux desktop app links are not implemented. Linux MPRIS and macOS Spotify/Music/VLC scripting adapters remain in source. Native macOS/Linux validation is pending. The Mac has the global shortcuts, Bluetooth, battery/internet/Caps Lock/volume notices, display choice and fullscreen tucking; macOS browser detection and non-Windows native recording/dictation are not implemented, and Linux has no tray or global shortcuts; Wayland can restrict placement.
 
 This is an expanded desktop release, **not complete CouCou parity**. Native iOS/Android applications and widgets, wake-word voice actions, portfolio/exchange tracking, automatic offline model installation, every agent-specific installer, all ten UI languages, coding analytics/share-image recaps, and code signing/notarization remain work. Service clients read status; they do not send emails, create payments or modify accounts. [Feature coverage](docs/feature-coverage.md) records the open work.
 

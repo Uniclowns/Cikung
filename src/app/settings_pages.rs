@@ -1,6 +1,22 @@
 use super::*;
 use crate::cloud::{self, ChatProvider};
 
+/// The global shortcuts' modifier keys as this keyboard labels them.
+const MODIFIERS: &str = if cfg!(target_os = "macos") {
+    "Control + Option"
+} else {
+    "Ctrl + Alt"
+};
+
+/// "Ctrl+Alt+C" on Windows, "Control+Option+C" on a Mac.
+fn shortcut_keys(letter: &str) -> String {
+    format!(
+        "{}+{}",
+        MODIFIERS.replace(" + ", "+"),
+        letter.to_ascii_uppercase()
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(super) enum SettingsPage {
     Dictation,
@@ -159,9 +175,9 @@ impl Cikung {
                 &mut self.prefs.always_on_top,
                 "Keep the notch above other windows",
             );
-            ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
+            ui.add_enabled_ui(cfg!(any(windows, target_os = "macos")), |ui| {
                 ui.checkbox(&mut self.prefs.tuck_in_fullscreen, "Tuck away during fullscreen apps")
-                    .on_hover_text("Off: the notch stays in front of fullscreen apps such as a YouTube video. On: it hides the collapsed notch during borderless fullscreen on its screen; Ctrl+Alt+C still opens it.");
+                    .on_hover_text(format!("Off: the notch stays in front of fullscreen apps such as a YouTube video. On: it hides the collapsed notch during fullscreen on its screen; {} still opens it.", shortcut_keys(&self.prefs.shortcut)));
             });
             ui.checkbox(
                 &mut self.prefs.minimal_notch,
@@ -228,7 +244,7 @@ impl Cikung {
                 "Bluetooth notifications",
                 "A small heads-up when your devices connect or disconnect.",
             );
-            ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
+            ui.add_enabled_ui(cfg!(any(windows, target_os = "macos")), |ui| {
                 ui.checkbox(
                     &mut self.prefs.bluetooth_notifications,
                     "Notify me about Bluetooth connections",
@@ -249,7 +265,18 @@ impl Cikung {
                     }
                 }
             }
-            ui.label(RichText::new("Windows Bluetooth and Bluetooth LE · checks every 3 seconds. Existing connections are quiet at startup.").size(11.0).color(muted()));
+            let source = if cfg!(target_os = "macos") {
+                "Paired Mac Bluetooth devices · macOS asks once for Bluetooth access"
+            } else {
+                "Windows Bluetooth and Bluetooth LE"
+            };
+            ui.label(
+                RichText::new(format!(
+                    "{source} · checks every 3 seconds. Existing connections are quiet at startup."
+                ))
+                .size(11.0)
+                .color(muted()),
+            );
         });
         card(ui, |ui| {
             heading(
@@ -257,13 +284,18 @@ impl Cikung {
                 "Battery, internet, Caps Lock and volume",
                 "A heads-up in the notch when your charger, battery, connection, Caps Lock or volume changes.",
             );
-            ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
+            ui.add_enabled_ui(cfg!(any(windows, target_os = "macos")), |ui| {
                 ui.checkbox(
                     &mut self.prefs.system_notices,
                     "Show battery, internet, Caps Lock and volume notices",
                 );
             });
-            ui.label(RichText::new("Charger connected or unplugged, low battery at 20 %, critical at 10 %, fully charged; internet connected, no internet or disconnected; Caps Lock on or off; the volume level with an animated bar when it changes. Windows only. The state at startup is quiet.").size(11.0).color(muted()));
+            let network = if cfg!(target_os = "macos") {
+                "internet connected or disconnected"
+            } else {
+                "internet connected, no internet or disconnected"
+            };
+            ui.label(RichText::new(format!("Charger connected or unplugged, low battery at 20 %, critical at 10 %, fully charged; {network}; Caps Lock on or off; the volume level with an animated bar when it changes. Windows and Mac. The state at startup is quiet.")).size(11.0).color(muted()));
         });
         card(ui, |ui| {
             heading(
@@ -555,7 +587,7 @@ impl Cikung {
     fn shortcut_settings(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Keyboard shortcuts", "Keep Cikung one keystroke away.");
         ui.horizontal(|ui| {
-            ui.label("Global shortcut: Ctrl + Alt +");
+            ui.label(format!("Global shortcut: {MODIFIERS} +"));
             ui.add(
                 egui::TextEdit::singleline(&mut self.prefs.shortcut)
                     .char_limit(1)
@@ -574,7 +606,7 @@ impl Cikung {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Hide or show Cikung: Ctrl + Alt +");
+            ui.label(format!("Hide or show Cikung: {MODIFIERS} +"));
             ui.add(
                 egui::TextEdit::singleline(&mut self.prefs.hide_shortcut)
                     .char_limit(1)

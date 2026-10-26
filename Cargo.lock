@@ -568,6 +568,7 @@ name = "cikung"
 version = "0.15.0"
 dependencies = [
  "base64 0.22.1",
+ "block2 0.5.1",
  "chrono",
  "eframe",
  "getrandom 0.3.4",

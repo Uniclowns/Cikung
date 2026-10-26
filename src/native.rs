@@ -49,10 +49,84 @@ pub fn pointer_in_window(handle: Option<usize>, scale: f32) -> Option<egui::Pos2
         (point.y - rect[1]) as f32 / scale,
     ))
 }
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn pointer_in_window(handle: Option<usize>, _scale: f32) -> Option<egui::Pos2> {
+    let frame = ns_window(handle)?.frame();
+    let point = unsafe { objc2_app_kit::NSEvent::mouseLocation() };
+    // AppKit counts points up from the bottom of the screen; egui counts down from the top.
+    Some(egui::pos2(
+        (point.x - frame.origin.x) as f32,
+        (frame.origin.y + frame.size.height - point.y) as f32,
+    ))
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn pointer_in_window(_handle: Option<usize>, _scale: f32) -> Option<egui::Pos2> {
     None
 }
+
+/// The notch's window, from the NSView handle eframe gives Cikung.
+#[cfg(target_os = "macos")]
+fn ns_window(handle: Option<usize>) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow>> {
+    let view = unsafe { &*(handle? as *const objc2_app_kit::NSView) };
+    view.window()
+}
+
+/// AppKit sends mouse moves only to the active app, and Cikung, with no Dock icon, is
+/// almost never active. A global monitor (no permission needed for the mouse) wakes egui
+/// while the pointer is over the notch or has just left it, and hands the notch the move
+/// it would otherwise miss, so hover opens, closes and highlights as on Windows.
+#[cfg(target_os = "macos")]
+pub fn watch_pointer(ctx: &egui::Context, handle: Option<usize>) {
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventType};
+    if handle.is_none() {
+        return;
+    }
+    let ctx = ctx.clone();
+    let was_inside = std::cell::Cell::new(false);
+    let block = block2::RcBlock::new(move |_event: std::ptr::NonNull<NSEvent>| {
+        let Some(window) = ns_window(handle) else {
+            return;
+        };
+        let frame = window.frame();
+        let point = unsafe { NSEvent::mouseLocation() };
+        let inside = point.x >= frame.origin.x
+            && point.x <= frame.origin.x + frame.size.width
+            && point.y >= frame.origin.y
+            && point.y <= frame.origin.y + frame.size.height;
+        if inside && unsafe { window.alphaValue() } > 0.0 {
+            let moved = unsafe {
+                NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                    NSEventType::MouseMoved,
+                    window.mouseLocationOutsideOfEventStream(),
+                    NSEventModifierFlags::empty(),
+                    0.0,
+                    window.windowNumber(),
+                    None,
+                    0,
+                    0,
+                    0.0,
+                )
+            };
+            if let Some(moved) = moved {
+                window.sendEvent(&moved);
+            }
+        }
+        if inside || was_inside.replace(inside) {
+            ctx.request_repaint();
+        }
+    });
+    let monitor = unsafe {
+        NSEvent::addGlobalMonitorForEventsMatchingMask_handler(
+            NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
+            &block,
+        )
+    };
+    // ponytail: the monitor and its block live for the whole run.
+    std::mem::forget(monitor);
+    std::mem::forget(block);
+}
+#[cfg(not(target_os = "macos"))]
+pub fn watch_pointer(_ctx: &egui::Context, _handle: Option<usize>) {}
 
 /// Windows owns a successful region. Everything outside it remains click-through.
 #[cfg(target_os = "windows")]
@@ -111,7 +185,20 @@ pub fn shape_window(handle: Option<usize>, rect: egui::Rect, scale: f32, radius:
     }
     true
 }
-#[cfg(not(target_os = "windows"))]
+/// AppKit has no window regions, and the Mac window already fits the notch. Only an empty
+/// shape (tucked away for a fullscreen app, or hidden) changes anything: the window turns
+/// invisible and lets every click through.
+#[cfg(target_os = "macos")]
+pub fn shape_window(handle: Option<usize>, rect: egui::Rect, _scale: f32, _radius: f32) -> bool {
+    let Some(window) = ns_window(handle) else {
+        return false;
+    };
+    let shown = rect.is_positive();
+    unsafe { window.setAlphaValue(if shown { 1.0 } else { 0.0 }) };
+    window.setIgnoresMouseEvents(!shown);
+    true
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn shape_window(_handle: Option<usize>, _rect: egui::Rect, _scale: f32, _radius: f32) -> bool {
     false
 }
@@ -164,7 +251,24 @@ pub fn fullscreen_on_display(display_id: &str) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn fullscreen_on_display(display_id: &str) -> bool {
+    use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions, NSScreen};
+    use objc2_foundation::MainThreadMarker;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    // The frontmost app's own options: a fullscreen video, game or app Space sets FullScreen.
+    let options =
+        unsafe { NSApplication::sharedApplication(mtm).currentSystemPresentationOptions() };
+    if !options.contains(NSApplicationPresentationOptions::NSApplicationPresentationFullScreen) {
+        return false;
+    }
+    // The main screen holds the focused window, so it is the fullscreen app's screen.
+    let notch = chosen_screen(mtm, display_id).map(|screen| screen_id(&screen));
+    NSScreen::mainScreen(mtm).is_some_and(|main| Some(screen_id(&main)) == notch)
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn fullscreen_on_display(_display_id: &str) -> bool {
     false
 }
@@ -225,9 +329,71 @@ pub fn displays() -> Vec<DisplayInfo> {
     result
 }
 
-#[cfg(not(target_os = "windows"))]
+/// Mac screens in pixels from the top-left of the primary screen, as Windows reports them.
+#[cfg(target_os = "macos")]
+pub fn displays() -> Vec<DisplayInfo> {
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::MainThreadMarker;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return Vec::new();
+    };
+    let screens = NSScreen::screens(mtm);
+    // AppKit's first screen has the menu bar; every frame counts up from its bottom-left.
+    let primary_height = screens.first().map_or(0.0, |s| s.frame().size.height);
+    screens
+        .iter()
+        .enumerate()
+        .map(|(index, screen)| {
+            let frame = screen.frame();
+            let scale = screen.backingScaleFactor();
+            let px = |points: f64| (points * scale).round() as i32;
+            let (width, height) = (px(frame.size.width), px(frame.size.height));
+            DisplayInfo {
+                id: screen_id(screen),
+                name: format!(
+                    "{}{} · {width} × {height}",
+                    unsafe { screen.localizedName() },
+                    if index == 0 { " (primary)" } else { "" }
+                ),
+                left: px(frame.origin.x),
+                top: px(primary_height - frame.origin.y - frame.size.height),
+                width,
+                height,
+                primary: index == 0,
+            }
+        })
+        .collect()
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn displays() -> Vec<DisplayInfo> {
     Vec::new()
+}
+
+/// A stable id for a Mac screen: its display number, else its name.
+#[cfg(target_os = "macos")]
+fn screen_id(screen: &objc2_app_kit::NSScreen) -> String {
+    use objc2_foundation::NSString;
+    screen
+        .deviceDescription()
+        .get(&NSString::from_str("NSScreenNumber"))
+        .map(|number| -> u32 { unsafe { objc2::msg_send![number, unsignedIntValue] } })
+        .map_or_else(
+            || unsafe { screen.localizedName() }.to_string(),
+            |number| number.to_string(),
+        )
+}
+
+/// The screen chosen in Settings, else the primary one, as on Windows.
+#[cfg(target_os = "macos")]
+fn chosen_screen(
+    mtm: objc2_foundation::MainThreadMarker,
+    display_id: &str,
+) -> Option<objc2::rc::Retained<objc2_app_kit::NSScreen>> {
+    let screens = objc2_app_kit::NSScreen::screens(mtm);
+    screens
+        .iter_retained()
+        .find(|screen| screen_id(screen) == display_id)
+        .or_else(|| screens.first_retained())
 }
 
 pub fn anchor_rect(
@@ -361,62 +527,31 @@ pub fn volume(command: i32) {
         }
     }
 }
-/// Camera notch of the main Mac display as (width, height) in points; `None` without one.
+/// Pins the notch window to the top centre of its Mac display (the one chosen in Settings),
+/// above the menu bar and on every Space, flush with the top edge exactly like Windows.
 #[cfg(target_os = "macos")]
-pub fn camera_notch() -> Option<(f32, f32)> {
-    use objc2::{runtime::NSObjectProtocol, sel};
-    use objc2_app_kit::NSScreen;
-    use objc2_foundation::MainThreadMarker;
-    let screen = NSScreen::mainScreen(MainThreadMarker::new()?)?;
-    // safeAreaInsets arrived in macOS 12; the bundle still starts on 11.
-    if !screen.respondsToSelector(sel!(safeAreaInsets)) {
-        return None;
-    }
-    unsafe {
-        let top = screen.safeAreaInsets().top;
-        let width = screen.frame().size.width
-            - screen.auxiliaryTopLeftArea().size.width
-            - screen.auxiliaryTopRightArea().size.width;
-        (top > 0.0 && width > 0.0).then_some((width as f32, top as f32))
-    }
-}
-#[cfg(not(target_os = "macos"))]
-pub fn camera_notch() -> Option<(f32, f32)> {
-    None
-}
-
-/// Lets clicks through to whatever is below, such as the menu bar beside the notch's neck
-/// where the window is see-through. Mac only.
-#[cfg(target_os = "macos")]
-pub fn set_click_through(handle: Option<usize>, through: bool) {
-    use objc2_app_kit::NSView;
-    let Some(handle) = handle else { return };
-    let view = unsafe { &*(handle as *const NSView) };
-    if let Some(window) = view.window() {
-        window.setIgnoresMouseEvents(through);
-    }
-}
-#[cfg(not(target_os = "macos"))]
-pub fn set_click_through(_handle: Option<usize>, _through: bool) {}
-
-/// Pins the notch window to the top centre of its Mac display, above the menu bar and on
-/// every Space. With a camera notch the app draws a neck there and the pill below it.
-#[cfg(target_os = "macos")]
-pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
-    use objc2_app_kit::{NSMainMenuWindowLevel, NSScreen, NSView, NSWindowCollectionBehavior};
+pub fn place_on_top(handle: Option<usize>, display_id: &str, width: f32, height: f32) {
+    use objc2_app_kit::{NSMainMenuWindowLevel, NSWindowCollectionBehavior};
     use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
-    let (Some(handle), Some(mtm)) = (handle, MainThreadMarker::new()) else {
+    let (Some(window), Some(mtm)) = (ns_window(handle), MainThreadMarker::new()) else {
         return;
     };
-    let view = unsafe { &*(handle as *const NSView) };
-    let Some(window) = view.window() else {
-        return;
-    };
-    let Some(screen) = window.screen().or_else(|| NSScreen::mainScreen(mtm)) else {
+    let Some(screen) = chosen_screen(mtm, display_id) else {
         return;
     };
     let frame = screen.frame();
     let (w, h) = (f64::from(width), f64::from(height));
+    let target = NSRect::new(
+        NSPoint::new(
+            frame.origin.x + (frame.size.width - w) / 2.0,
+            frame.origin.y + frame.size.height - h,
+        ),
+        NSSize::new(w, h),
+    );
+    // The window keeps its level and frame between frames; avoid redundant AppKit work.
+    if window.frame() == target {
+        return;
+    }
     window.setLevel(NSMainMenuWindowLevel + 3);
     unsafe {
         window.setCollectionBehavior(
@@ -427,16 +562,7 @@ pub fn place_on_top(handle: Option<usize>, width: f32, height: f32) {
         );
     }
     window.setHasShadow(false);
-    window.setFrame_display(
-        NSRect::new(
-            NSPoint::new(
-                frame.origin.x + (frame.size.width - w) / 2.0,
-                frame.origin.y + frame.size.height - h,
-            ),
-            NSSize::new(w, h),
-        ),
-        true,
-    );
+    window.setFrame_display(target, true);
 }
 
 /// Keeps the notch out of the taskbar and Alt+Tab so Cikung runs in the background
@@ -594,6 +720,14 @@ pub fn take_menu_request() -> u8 {
     0
 }
 
+/// Whether Cikung.app's Info.plist has this key. macOS ends an app that touches a
+/// protected device, such as Bluetooth, without its usage description.
+#[cfg(target_os = "macos")]
+pub fn bundle_declares(key: &str) -> bool {
+    use objc2_foundation::{NSBundle, NSString};
+    unsafe { NSBundle::mainBundle().objectForInfoDictionaryKey(&NSString::from_str(key)) }.is_some()
+}
+
 /// Like Nusa: hand idle pages back to Windows while the notch rests. Task Manager's
 /// memory drops; pages fault back in only when touched again.
 #[cfg(target_os = "windows")]
@@ -662,24 +796,72 @@ fn endpoint_volume() -> Option<windows::Win32::Media::Audio::Endpoints::IAudioEn
         device.Activate(CLSCTX_ALL, None).ok()
     }
 }
-/// `None` when the output has no software volume (some HDMI/digital outputs).
+/// `None` when the output has no software volume (some HDMI/digital outputs). Core Audio
+/// answers in microseconds, so the volume HUD can watch it as often as Windows does.
 #[cfg(target_os = "macos")]
 pub fn system_volume() -> Option<(f32, bool)> {
-    let output = std::process::Command::new("/usr/bin/osascript")
-        .args([
-            "-e",
-            "set s to get volume settings",
-            "-e",
-            "(output volume of s as text) & \",\" & (output muted of s as text)",
-        ])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    let (level, muted) = text.trim().split_once(',')?;
-    Some((
-        level.trim().parse::<f32>().ok()? / 100.0,
-        muted.trim() == "true",
-    ))
+    use std::ffi::c_void;
+    #[repr(C)]
+    struct Address {
+        selector: u32,
+        scope: u32,
+        element: u32,
+    }
+    type Get =
+        unsafe extern "C" fn(u32, *const Address, u32, *const c_void, *mut u32, *mut c_void) -> i32;
+    #[link(name = "CoreAudio", kind = "framework")]
+    unsafe extern "C" {
+        fn AudioObjectGetPropertyData(
+            object: u32,
+            address: *const Address,
+            qualifier_size: u32,
+            qualifier: *const c_void,
+            size: *mut u32,
+            data: *mut c_void,
+        ) -> i32;
+    }
+    #[link(name = "AudioToolbox", kind = "framework")]
+    unsafe extern "C" {
+        fn AudioHardwareServiceGetPropertyData(
+            object: u32,
+            address: *const Address,
+            qualifier_size: u32,
+            qualifier: *const c_void,
+            size: *mut u32,
+            data: *mut c_void,
+        ) -> i32;
+    }
+    fn read<T: Default>(get: Get, object: u32, selector: &[u8; 4], scope: &[u8; 4]) -> Option<T> {
+        let address = Address {
+            selector: u32::from_be_bytes(*selector),
+            scope: u32::from_be_bytes(*scope),
+            element: 0,
+        };
+        let mut value = T::default();
+        let mut size = std::mem::size_of::<T>() as u32;
+        let status = unsafe {
+            get(
+                object,
+                &address,
+                0,
+                std::ptr::null(),
+                &mut size,
+                (&mut value as *mut T).cast(),
+            )
+        };
+        (status == 0).then_some(value)
+    }
+    // The system object (1)'s default output, its main volume as the volume keys move it
+    // ("vmvc", the same level AppleScript's output volume shows) and its mute.
+    let device: u32 = read(AudioObjectGetPropertyData, 1, b"dOut", b"glob")?;
+    let level: f32 = read(
+        AudioHardwareServiceGetPropertyData,
+        device,
+        b"vmvc",
+        b"outp",
+    )?;
+    let muted: u32 = read(AudioObjectGetPropertyData, device, b"mute", b"outp").unwrap_or(0);
+    Some((level.clamp(0.0, 1.0), muted != 0))
 }
 #[cfg(target_os = "macos")]
 pub fn set_system_volume(level: f32, muted: bool) {
@@ -775,12 +957,201 @@ impl Drop for GlobalShortcut {
         }
     }
 }
-#[cfg(not(target_os = "windows"))]
+/// Control+Option+letter through Carbon hot keys: macOS delivers them to Cikung whichever
+/// app is in front, with no Accessibility or Input Monitoring permission.
+#[cfg(target_os = "macos")]
+mod mac_hotkey {
+    use std::{
+        collections::BTreeMap,
+        ffi::c_void,
+        sync::{Mutex, OnceLock, mpsc::Sender},
+    };
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    pub struct HotKeyId {
+        pub signature: u32,
+        pub id: u32,
+    }
+    #[repr(C)]
+    struct EventType {
+        class: u32,
+        kind: u32,
+    }
+    type Handler = extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> i32;
+
+    #[link(name = "Carbon", kind = "framework")]
+    unsafe extern "C" {
+        fn GetApplicationEventTarget() -> *mut c_void;
+        fn InstallEventHandler(
+            target: *mut c_void,
+            handler: Handler,
+            count: usize,
+            types: *const EventType,
+            data: *mut c_void,
+            out: *mut *mut c_void,
+        ) -> i32;
+        fn GetEventParameter(
+            event: *mut c_void,
+            name: u32,
+            wanted: u32,
+            actual: *mut u32,
+            size: usize,
+            actual_size: *mut usize,
+            data: *mut c_void,
+        ) -> i32;
+        fn RegisterEventHotKey(
+            code: u32,
+            modifiers: u32,
+            id: HotKeyId,
+            target: *mut c_void,
+            options: u32,
+            out: *mut *mut c_void,
+        ) -> i32;
+        pub fn UnregisterEventHotKey(hot_key: *mut c_void) -> i32;
+    }
+
+    pub const SIGNATURE: u32 = u32::from_be_bytes(*b"Ckng");
+    /// Carbon's controlKey and optionKey: the Mac's Ctrl+Alt.
+    const CONTROL_OPTION: u32 = 1 << 12 | 1 << 11;
+    pub static KEYS: Mutex<BTreeMap<u32, (Sender<()>, eframe::egui::Context)>> =
+        Mutex::new(BTreeMap::new());
+
+    /// kVK_ANSI_A … kVK_ANSI_Z: key positions on a US layout, which Carbon hot keys use.
+    pub fn key_code(letter: u8) -> Option<u32> {
+        const CODES: [u32; 26] = [
+            0x00, 0x0B, 0x08, 0x02, 0x0E, 0x03, 0x05, 0x04, 0x22, 0x26, 0x28, 0x25, 0x2E, 0x2D,
+            0x1F, 0x23, 0x0C, 0x0F, 0x01, 0x11, 0x20, 0x09, 0x0D, 0x07, 0x10, 0x06,
+        ];
+        let index = letter.to_ascii_uppercase().checked_sub(b'A')?;
+        CODES.get(usize::from(index)).copied()
+    }
+
+    extern "C" fn pressed(_next: *mut c_void, event: *mut c_void, _data: *mut c_void) -> i32 {
+        let mut key = HotKeyId::default();
+        let status = unsafe {
+            GetEventParameter(
+                event,
+                u32::from_be_bytes(*b"----"),
+                u32::from_be_bytes(*b"hkid"),
+                std::ptr::null_mut(),
+                std::mem::size_of::<HotKeyId>(),
+                std::ptr::null_mut(),
+                (&mut key as *mut HotKeyId).cast(),
+            )
+        };
+        if status == 0
+            && key.signature == SIGNATURE
+            && let Some((tx, ctx)) = KEYS.lock().ok().and_then(|k| k.get(&key.id).cloned())
+        {
+            let _ = tx.send(());
+            ctx.request_repaint();
+        }
+        0
+    }
+
+    /// Registers one Control+Option hot key; the handler for all of them is installed once.
+    pub fn register(code: u32, id: u32) -> Result<*mut c_void, String> {
+        static HANDLER: OnceLock<i32> = OnceLock::new();
+        let installed = *HANDLER.get_or_init(|| {
+            let spec = EventType {
+                class: u32::from_be_bytes(*b"keyb"),
+                // kEventHotKeyPressed
+                kind: 5,
+            };
+            let mut handler = std::ptr::null_mut();
+            unsafe {
+                InstallEventHandler(
+                    GetApplicationEventTarget(),
+                    pressed,
+                    1,
+                    &spec,
+                    std::ptr::null_mut(),
+                    &mut handler,
+                )
+            }
+        });
+        if installed != 0 {
+            return Err(format!(
+                "macOS refused global shortcuts (error {installed})."
+            ));
+        }
+        let mut hot_key = std::ptr::null_mut();
+        let status = unsafe {
+            RegisterEventHotKey(
+                code,
+                CONTROL_OPTION,
+                HotKeyId {
+                    signature: SIGNATURE,
+                    id,
+                },
+                GetApplicationEventTarget(),
+                0,
+                &mut hot_key,
+            )
+        };
+        if status == 0 {
+            Ok(hot_key)
+        } else {
+            Err(format!(
+                "Shortcut is already in use (macOS error {status})."
+            ))
+        }
+    }
+}
+#[cfg(target_os = "macos")]
+pub struct GlobalShortcut {
+    receiver: std::sync::mpsc::Receiver<()>,
+    id: u32,
+    hot_key: *mut std::ffi::c_void,
+}
+#[cfg(target_os = "macos")]
+impl GlobalShortcut {
+    pub fn new(ctx: egui::Context, letter: u8) -> Result<Self, String> {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let code = mac_hotkey::key_code(letter).ok_or("Use a letter from A to Z.")?;
+        objc2_foundation::MainThreadMarker::new()
+            .ok_or("Shortcuts must be set from the main thread.")?;
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let (tx, receiver) = std::sync::mpsc::channel();
+        if let Ok(mut keys) = mac_hotkey::KEYS.lock() {
+            keys.insert(id, (tx, ctx));
+        }
+        match mac_hotkey::register(code, id) {
+            Ok(hot_key) => Ok(Self {
+                receiver,
+                id,
+                hot_key,
+            }),
+            Err(error) => {
+                if let Ok(mut keys) = mac_hotkey::KEYS.lock() {
+                    keys.remove(&id);
+                }
+                Err(error)
+            }
+        }
+    }
+    pub fn pressed(&self) -> bool {
+        self.receiver.try_iter().count() > 0
+    }
+}
+#[cfg(target_os = "macos")]
+impl Drop for GlobalShortcut {
+    fn drop(&mut self) {
+        unsafe {
+            mac_hotkey::UnregisterEventHotKey(self.hot_key);
+        }
+        if let Ok(mut keys) = mac_hotkey::KEYS.lock() {
+            keys.remove(&self.id);
+        }
+    }
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub struct GlobalShortcut;
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 impl GlobalShortcut {
     pub fn new(_ctx: egui::Context, _letter: u8) -> Result<Self, String> {
-        Err("Global shortcuts are currently available on Windows.".into())
+        Err("Global shortcuts are currently available on Windows and macOS.".into())
     }
     pub fn pressed(&self) -> bool {
         false

@@ -1,6 +1,6 @@
 //! Battery, internet, Caps Lock and volume heads-ups in the notch, as Nusa 1.0 shows them.
-//! Only changes are announced, never the state Cikung starts in. Windows only for now;
-//! other platforms read nothing.
+//! Only changes are announced, never the state Cikung starts in. Windows and macOS; other
+//! platforms read nothing.
 use std::{sync::mpsc, time::Duration};
 
 pub struct Notice {
@@ -24,7 +24,7 @@ pub struct Power {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-// Only the Windows probe builds these.
+// Only Windows can tell "no internet" from connected; other platforms build fewer of these.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub enum Network {
     /// Internet access, with the connection's name (a Wi-Fi network, "Ethernet").
@@ -218,7 +218,104 @@ mod probe {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+mod probe {
+    use super::{Network, Power};
+    use std::ffi::c_void;
+
+    pub fn init() {}
+
+    pub fn volume() -> Option<(f32, bool)> {
+        crate::native::system_volume()
+    }
+
+    pub fn caps_lock() -> bool {
+        #[link(name = "CoreGraphics", kind = "framework")]
+        unsafe extern "C" {
+            fn CGEventSourceFlagsState(state: i32) -> u64;
+        }
+        // The keyboard's own state (kCGEventSourceStateHIDSystemState); AlphaShift is Caps Lock.
+        let flags = unsafe { CGEventSourceFlagsState(1) };
+        flags & 0x0001_0000 != 0
+    }
+
+    /// `None` without a battery (a Mac mini, iMac or Mac Studio).
+    pub fn power() -> Option<Power> {
+        let output = std::process::Command::new("/usr/bin/pmset")
+            .args(["-g", "batt"])
+            .output()
+            .ok()?;
+        super::parse_pmset(&String::from_utf8_lossy(&output.stdout))
+    }
+
+    /// Whether macOS has a route to the internet at all; nothing is sent to find out.
+    /// The Wi-Fi name needs Location access on recent macOS, so it is left out.
+    pub fn network() -> Option<Network> {
+        #[repr(C)]
+        struct Ipv4 {
+            len: u8,
+            family: u8,
+            port: u16,
+            address: u32,
+            zero: [u8; 8],
+        }
+        #[link(name = "SystemConfiguration", kind = "framework")]
+        unsafe extern "C" {
+            fn SCNetworkReachabilityCreateWithAddress(
+                allocator: *const c_void,
+                address: *const Ipv4,
+            ) -> *const c_void;
+            fn SCNetworkReachabilityGetFlags(target: *const c_void, flags: *mut u32) -> u8;
+        }
+        #[link(name = "CoreFoundation", kind = "framework")]
+        unsafe extern "C" {
+            fn CFRelease(object: *const c_void);
+        }
+        // 0.0.0.0 asks about the internet in general, as Apple's reachability sample does.
+        let anywhere = Ipv4 {
+            len: std::mem::size_of::<Ipv4>() as u8,
+            family: 2,
+            port: 0,
+            address: 0,
+            zero: [0; 8],
+        };
+        let mut flags = 0;
+        let known = unsafe {
+            let target = SCNetworkReachabilityCreateWithAddress(std::ptr::null(), &anywhere);
+            if target.is_null() {
+                return None;
+            }
+            let known = SCNetworkReachabilityGetFlags(target, &mut flags) != 0;
+            CFRelease(target);
+            known
+        };
+        // kSCNetworkReachabilityFlagsReachable without ConnectionRequired.
+        known.then(|| {
+            if flags & 2 != 0 && flags & 4 == 0 {
+                Network::Internet(String::new())
+            } else {
+                Network::Offline
+            }
+        })
+    }
+}
+
+/// `pmset -g batt`: "Now drawing from 'AC Power'" and a line such as
+/// " -InternalBattery-0 (id=1234)\t85%; charging; 1:02 remaining present: true".
+#[cfg(any(target_os = "macos", test))]
+fn parse_pmset(text: &str) -> Option<Power> {
+    let battery = text.lines().find(|line| line.contains("InternalBattery"))?;
+    let end = battery.find('%')?;
+    let start = battery[..end]
+        .rfind(|c: char| !c.is_ascii_digit())
+        .map_or(0, |i| i + 1);
+    Some(Power {
+        plugged_in: text.contains("'AC Power'"),
+        percent: battery[start..end].parse::<u8>().ok()?.min(100),
+    })
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 mod probe {
     use super::{Network, Power};
 
@@ -296,6 +393,21 @@ mod tests {
             Some(Event::Volume { level, muted: false }) if level == 0.5
         ));
         assert!(state.volume(0.5, true).is_some());
+
+        // A Mac's battery from pmset; a desktop Mac reports none.
+        let pmset = "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=4653155)\t19%; discharging; 2:01 remaining present: true\n";
+        assert_eq!(
+            parse_pmset(pmset),
+            Some(Power {
+                plugged_in: false,
+                percent: 19
+            })
+        );
+        assert!(
+            parse_pmset(&pmset.replace("'Battery Power'", "'AC Power'"))
+                .is_some_and(|p| p.plugged_in)
+        );
+        assert_eq!(parse_pmset("Now drawing from 'AC Power'\n"), None);
 
         // Caps Lock: quiet first reading, then every toggle.
         assert!(state.caps_lock(false).is_none());

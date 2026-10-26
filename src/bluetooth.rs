@@ -188,9 +188,56 @@ pub fn probe() -> Result<Vec<Device>, String> {
     query().map_err(|e| format!("Bluetooth status is unavailable: {e}"))
 }
 
-#[cfg(not(target_os = "windows"))]
+/// Paired Mac devices that are connected now, through IOBluetooth (classic and paired LE
+/// devices such as AirPods, keyboards and mice).
+#[cfg(target_os = "macos")]
 pub fn probe() -> Result<Vec<Device>, String> {
-    Err("Bluetooth notifications currently require Windows.".into())
+    use objc2::{
+        msg_send, msg_send_id,
+        rc::Retained,
+        runtime::{AnyClass, AnyObject},
+    };
+    use objc2_foundation::{NSArray, NSString};
+    #[link(name = "IOBluetooth", kind = "framework")]
+    unsafe extern "C" {}
+    // Without the Bluetooth usage description macOS ends the app on first use, so a bare
+    // binary (not the built Cikung.app) never asks.
+    if !crate::native::bundle_declares("NSBluetoothAlwaysUsageDescription") {
+        return Err("Bluetooth notifications need Cikung.app from the Mac build.".into());
+    }
+    let class =
+        AnyClass::get("IOBluetoothDevice").ok_or("Bluetooth is unavailable on this Mac.")?;
+    objc2::rc::autoreleasepool(|_| {
+        let paired: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send_id![class, pairedDevices] };
+        let mut devices = BTreeMap::new();
+        for device in paired.iter().flat_map(|list| list.iter()) {
+            let connected: bool = unsafe { msg_send![device, isConnected] };
+            if !connected {
+                continue;
+            }
+            let text = |name: Option<Retained<NSString>>| name.map(|s| s.to_string());
+            let id = text(unsafe { msg_send_id![device, addressString] }).unwrap_or_default();
+            let name = text(unsafe { msg_send_id![device, name] }).unwrap_or_default();
+            devices.insert(
+                id.clone(),
+                Device {
+                    id,
+                    name: if name.trim().is_empty() {
+                        "Bluetooth device".into()
+                    } else {
+                        name.chars().filter(|c| !c.is_control()).take(100).collect()
+                    },
+                },
+            );
+        }
+        Ok(devices.into_values().collect())
+    })
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn probe() -> Result<Vec<Device>, String> {
+    Err("Bluetooth notifications currently require Windows or macOS.".into())
 }
 
 #[cfg(test)]
