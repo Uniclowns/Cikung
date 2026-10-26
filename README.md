@@ -88,6 +88,8 @@ This is an expanded desktop release, **not complete CouCou parity**. Native iOS/
 
 ## Version history
 
+Version 0.16.0 makes the Mac notch look and work like the Windows one. The black neck above the pill is gone: the notch sits flush with the top edge of the chosen display, and menus inside it are no longer cut off. Hover opens it while another app is in front, Control+Option+C opens it and Control+Option+H hides it, it tucks away for fullscreen apps, and the battery, internet, Caps Lock, volume and Bluetooth notices show on the Mac too. Claude Code turns now chime even while the screen is off, through an optional Claude Code hook (Settings → Notifications).
+
 Version 0.15.0 brings Nusa-style notices to the notch: battery, internet, Caps Lock and an animated volume HUD. Claude and Codex replies are announced within seconds, even while the app is in the background, and WhatsApp (including WhatsApp Desk) shows as "Sender: message" or "Group - Sender: message" in a pill that fits it. The chat assistant proposes tasks, and tasks with a due time sync to Google Calendar ([guide](docs/google-calendar.md)). Cikung drops by every few minutes, Ctrl+Alt+H hides the notch for games, pages can be switched off, a Glass theme joins the others, the page dots glide and follow the mouse wheel, and a new song's lyrics appear without a click.
 
 Version 0.14.5 draws the Mac notch exactly like the Windows one, at the top centre: the cat, song or lyric, clock and date, and music bars in one row at the Windows sizes. On a MacBook's own screen the camera covers the middle of that row.
