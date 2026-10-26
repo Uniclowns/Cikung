@@ -96,11 +96,15 @@ fn read(path: &std::path::Path) -> Result<Value, String> {
 /// Saves `settings` after copying the current file to a timestamped backup beside it.
 fn write(path: &std::path::Path, settings: &Value) -> Result<Option<PathBuf>, String> {
     let backup = if path.exists() {
-        let name = format!(
-            "settings.json.cikung-backup-{}",
-            chrono::Local::now().format("%Y%m%d-%H%M%S")
-        );
-        let backup = path.with_file_name(name);
+        // A second save in the same second gets its own name; a backup is never replaced.
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+        let backup = (0..)
+            .map(|n| match n {
+                0 => path.with_file_name(format!("settings.json.cikung-backup-{stamp}")),
+                n => path.with_file_name(format!("settings.json.cikung-backup-{stamp}-{n}")),
+            })
+            .find(|candidate| !candidate.exists())
+            .ok_or("Could not name a backup of Claude's settings.json.")?;
         fs::copy(path, &backup).map_err(|_| "Could not back up Claude's settings.json.")?;
         Some(backup)
     } else {
@@ -197,5 +201,20 @@ mod tests {
         assert_eq!(without_hook(connected), json!({"hooks": {}}));
         assert!(with_hook(json!([]), "x").is_err());
         assert!(!has_hook(&json!({"hooks": {"Stop": "oops"}})));
+    }
+
+    #[test]
+    fn two_saves_in_the_same_second_keep_both_backups() {
+        let dir = std::env::temp_dir().join(format!("cikung-hook-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        fs::write(&path, "{\"model\": \"opus\"}").unwrap();
+        let first = write(&path, &json!({"a": 1})).unwrap().unwrap();
+        let second = write(&path, &json!({"a": 2})).unwrap().unwrap();
+        assert_ne!(first, second);
+        assert_eq!(fs::read_to_string(&first).unwrap(), "{\"model\": \"opus\"}");
+        assert!(fs::read_to_string(&second).unwrap().contains("\"a\": 1"));
+        assert!(fs::read_to_string(&path).unwrap().contains("\"a\": 2"));
+        let _ = fs::remove_dir_all(dir);
     }
 }
