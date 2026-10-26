@@ -220,8 +220,8 @@ impl Cikung {
     }
     /// Nusa-style speaker and level slider for the system output; the speaker mutes.
     fn volume_control(&mut self, ui: &mut egui::Ui) {
-        // Re-read now and then so keyboard or system changes show; osascript is slower.
-        let every = Duration::from_secs(if cfg!(target_os = "macos") { 10 } else { 2 });
+        // Re-read now and then so keyboard or system changes show.
+        let every = Duration::from_secs(2);
         if self.volume_checked.is_none_or(|at| at.elapsed() > every) {
             self.volume = native::system_volume();
             self.volume_checked = Some(Instant::now());

@@ -35,6 +35,8 @@ def info():
         "LSMinimumSystemVersion": "11.0", "NSHighResolutionCapable": True,
         "NSPrincipalClass": "NSApplication",
         "NSAppleEventsUsageDescription": "Cikung reads track information and controls playback in Spotify, Music and VLC when you connect them.",
+        # Without it macOS ends the app when the Bluetooth notices first look at devices.
+        "NSBluetoothAlwaysUsageDescription": "Cikung shows a small heads-up in the notch when your Bluetooth devices connect or disconnect.",
     }
 
 
@@ -61,6 +63,7 @@ def validate():
     data = plistlib.loads(plistlib.dumps(info()))
     assert data["CFBundleIconFile"] == "Cikung.icns" and data.get("LSUIElement") is True
     assert data["NSAppleEventsUsageDescription"] and data["CFBundleVersion"] == version()
+    assert data["NSBluetoothAlwaysUsageDescription"], "Bluetooth notices need a usage description"
     for file in ("Cargo.lock", "LICENSE", "README.md", "docs/macos.md", "Build-Cikung.command"):
         assert (ROOT / file).is_file(), file
     assert b"\r" not in (ROOT / "Build-Cikung.command").read_bytes(), "Mac launcher requires LF line endings"

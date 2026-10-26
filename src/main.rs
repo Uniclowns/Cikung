@@ -8,6 +8,7 @@ mod app;
 mod bluetooth;
 mod bridge;
 mod cats;
+mod claude_hook;
 mod cloud;
 mod completion_sound;
 mod desktop_apps;
@@ -32,6 +33,11 @@ use eframe::egui;
 
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Claude Code's Stop hook: tell a running Cikung a turn finished; never start one.
+    if args.iter().any(|a| a == claude_hook::FLAG) {
+        let _ = instance::show(Some(claude_hook::FLAG));
+        return Ok(());
+    }
     #[cfg(target_os = "windows")]
     if setup::run(&args) {
         return Ok(());
@@ -95,7 +101,7 @@ fn main() -> eframe::Result {
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Cikung 0.15.0\n\nOne app, one top-center notch, six cat breeds. Use Cats to choose a cat or assign cats to features.\n--probe    Print actual system media sessions as JSON\n--notifications-probe Print notification access and WhatsApp count (no message contents)\n--bluetooth-probe Print connected Bluetooth devices without changing them\n--desktop-probe  Print desktop app connection status (no message contents)\n--demo     Preview with clearly labeled sample media\n--expanded Start with the notch open\n--page overview|music|lyrics|focus|files|tasks|water|notes|agents|chat|game|services|phone|cats|settings|more\n--page settings/<general|cats|music|agents|chat|integrations|phone|shortcuts|dictation|notes|focus|tasks|water|game|notifications>  Open a hub page\n--screenshot <path.png>  Save a window capture and exit\n--install / --uninstall  Install for this Windows account (as Cikung-Setup.exe does) or remove it\n\nA second launch opens the requested page in the existing app. Legacy --feature and --workspace flags no longer start separate companions.\nHover to open. Click the header to open or close. Ctrl+Alt+C toggles the notch. Ctrl+Alt+H hides it. Ctrl+Q quits."
+            "Cikung 0.16.0\n\nOne app, one top-center notch, six cat breeds. Use Cats to choose a cat or assign cats to features.\n--probe    Print actual system media sessions as JSON\n--notifications-probe Print notification access and WhatsApp count (no message contents)\n--bluetooth-probe Print connected Bluetooth devices without changing them\n--desktop-probe  Print desktop app connection status (no message contents)\n--demo     Preview with clearly labeled sample media\n--expanded Start with the notch open\n--page overview|music|lyrics|focus|files|tasks|water|notes|agents|chat|game|services|phone|cats|settings|more\n--page settings/<general|cats|music|agents|chat|integrations|phone|shortcuts|dictation|notes|focus|tasks|water|game|notifications>  Open a hub page\n--screenshot <path.png>  Save a window capture and exit\n--install / --uninstall  Install for this Windows account (as Cikung-Setup.exe does) or remove it\n\nA second launch opens the requested page in the existing app. Legacy --feature and --workspace flags no longer start separate companions.\nHover to open. Click the header to open or close. Ctrl+Alt+C toggles the notch. Ctrl+Alt+H hides it. Ctrl+Q quits."
         );
         return Ok(());
     }
